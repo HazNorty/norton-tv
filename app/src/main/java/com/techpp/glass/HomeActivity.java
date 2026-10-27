@@ -77,7 +77,7 @@ public class HomeActivity extends Activity {
 
     // Where focus is.
     private static final int Z_TOP = 0, Z_TABS = 1, Z_PICKS = 2, Z_DOCK = 3, Z_GRID = 4, Z_MENU = 5, Z_CHAN = 6;
-    private static final int P_CONTROL = 0, P_INPUTS = 1, P_WIFI = 2, P_SETTINGS = 3, P_BELL = 4;
+    private static final int P_CONTROL = 0, P_INPUTS = 1, P_WIFI = 2, P_SETTINGS = 3, P_VPN = 4;
     private static final String[] TAB_IDS = {RecentStore.TAB, Trending.TRENDING, Trending.INDIA};
     private static final int TAB_TRENDING = 1, MIN_CONTINUE = 10, MAX_CONTINUE = 16, MAX_YOUTUBE = 2;
     private static final int DOCK_SIZE = 7, GRID_COLS = 6;
@@ -254,8 +254,6 @@ public class HomeActivity extends Activity {
         tabs = new TextView[]{findViewById(R.id.tab_recent), findViewById(R.id.tab_trending), findViewById(R.id.tab_india)};
         icons = new ImageView[]{findViewById(R.id.icon_cc), findViewById(R.id.icon_inputs), findViewById(R.id.icon_wifi),
                 findViewById(R.id.icon_settings), findViewById(R.id.icon_bell)};
-        Updates.setListener(this::onUpdates);
-        onUpdates();
         picksRow.setOnFrame(this::snapRing);
 
         // Banners are prepared at the size of the largest focused tile (an All apps tile at 110%).
@@ -365,7 +363,9 @@ public class HomeActivity extends Activity {
             c.setColor(f ? theme.iconFocusBg : theme.iconBg);
             if (!f) c.setStroke(px(1), theme.iconStroke);
             icons[i].setBackground(c);
-            icons[i].setImageTintList(ColorStateList.valueOf(f ? theme.iconFocusFg : theme.text));
+            int fg = f ? theme.iconFocusFg : theme.text;
+            if (i == P_VPN && !f) fg = vpnOn ? VPN_GREEN : (theme.text & 0x00FFFFFF) | 0x73000000;  // green on, dimmed off
+            icons[i].setImageTintList(ColorStateList.valueOf(fg));
             icons[i].animate().scaleX(f ? 1.08f : 1f).scaleY(f ? 1.08f : 1f).setDuration(150).start();
         }
         for (int i = 0; i < tabs.length; i++) {
@@ -1826,7 +1826,7 @@ public class HomeActivity extends Activity {
                 if (iconIdx == P_CONTROL) openControlCenter();
                 else if (iconIdx == P_INPUTS) openInputs();
                 else if (iconIdx == P_WIFI) start(new Intent(Settings.ACTION_WIFI_SETTINGS));
-                else if (iconIdx == P_BELL) openUpdates();
+                else if (iconIdx == P_VPN) openVpn();
                 else openTvSettings();
                 break;
             case Z_TABS:
@@ -2793,34 +2793,29 @@ public class HomeActivity extends Activity {
         }, "speed-test").start();
     }
 
-    // ---------------------------------------------------------------- app updates
+    // ---------------------------------------------------------------- VPN
 
-    /** The bell shows while the Play Store has updates waiting (Updates, fed by WatchService). */
-    private void onUpdates() {
-        boolean any = !Updates.list().isEmpty();
-        icons[P_BELL].setVisibility(any ? View.VISIBLE : View.GONE);
-        if (!any && zone == Z_TOP && iconIdx == P_BELL) focusTop(P_SETTINGS);
-        if (!any && zone == Z_MENU && menuAnchor == P_BELL) closeMenu();
+    /** Norton TV's VPN app: OK on the VPN button opens it. */
+    private static final String VPN_APP = "com.nordvpn.android";
+    /** The green the VPN button turns while a VPN is on. */
+    private static final int VPN_GREEN = 0xFF30D158;
+    private boolean vpnOn;
+
+    /** The VPN button (the updates bell's old spot): shown with NordVPN installed or a VPN on; green while one is on. */
+    private void updateVpn(boolean on) {
+        vpnOn = on;
+        boolean shown = on || pm.getLeanbackLaunchIntentForPackage(VPN_APP) != null;
+        icons[P_VPN].setVisibility(shown ? View.VISIBLE : View.GONE);
+        icons[P_VPN].setContentDescription(on ? "VPN: on" : "VPN: off");
+        if (!shown && zone == Z_TOP && iconIdx == P_VPN) focusTop(P_SETTINGS);
+        styleTop();
     }
 
-    /** One row per Play Store notification ("3 updates available" · "YouTube, Netflix…"); OK opens it in the Play Store. */
-    private void openUpdates() {
-        List<Updates.Item> list = Updates.list();
-        if (list.isEmpty()) return;
-        beginMenu(P_BELL, "App updates");
-        for (Updates.Item it : list) {
-            String label = it.title.isEmpty() ? it.text : it.title;
-            addRow(label, it.title.isEmpty() ? null : shorten(it.text, 34), () -> {
-                try {
-                    if (it.open != null) { it.open.send(); return; }
-                } catch (Exception e) {
-                    Log.w(TAG, "Couldn't open the update: " + e);
-                }
-                Intent store = pm.getLeanbackLaunchIntentForPackage("com.android.vending");
-                if (store != null) start(store);
-            }, false);
-        }
-        showMenu(480);
+    /** OK on the VPN button: NordVPN, to connect, disconnect or pick a server. */
+    private void openVpn() {
+        Intent i = pm.getLeanbackLaunchIntentForPackage(VPN_APP);
+        if (i != null) start(i);
+        else start(new Intent(Settings.ACTION_SETTINGS));
     }
 
     private static String shorten(String s, int max) {
@@ -2835,7 +2830,7 @@ public class HomeActivity extends Activity {
         // Norton TV has no accessibility service, so no Sleep timer, Turn off now or Restart rows.
         final View[] mem = new View[1];
         mem[0] = addRow("Free up memory", availableMb() + " MB free", () -> freeMemory(mem[0]), true);
-        addRow("Network", networkName(), () -> start(new Intent(Settings.ACTION_WIFI_SETTINGS)), false);
+        addRow("Network", networkName() + (vpnOn ? "  ·  VPN on" : ""), () -> start(new Intent(Settings.ACTION_WIFI_SETTINGS)), false);
         final View[] speed = new View[1];
         speed[0] = addRow("Speed test", lastSpeed, () -> runSpeedTest(speed[0]), true);
         final View[] bt = new View[1];
@@ -3096,10 +3091,13 @@ public class HomeActivity extends Activity {
     // ---------------------------------------------------------------- network, wallpaper
 
     private void updateNetwork(NetworkCapabilities caps) {
+        // With a VPN on, the default network is the VPN's: it counts as online, and turns the VPN button green.
+        boolean vpn = caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
         boolean online = caps != null && (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-                || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET));
+                || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) || vpn);
         icons[P_WIFI].setAlpha(online ? 1f : 0.45f);
         icons[P_WIFI].setContentDescription(online ? "Wi-Fi" : "Wi-Fi: offline");
+        updateVpn(vpn);
     }
 
     /** Your own wallpaper (files/wallpaper.jpg|png|webp) replaces the soft backdrop. */

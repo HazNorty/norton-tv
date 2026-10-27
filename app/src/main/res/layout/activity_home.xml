@@ -68,8 +68,9 @@
                 <ImageView android:id="@+id/icon_inputs" style="@style/IconButton" android:src="@drawable/ic_input" android:contentDescription="Inputs" />
                 <ImageView android:id="@+id/icon_wifi" style="@style/IconButton" android:src="@drawable/ic_wifi" android:contentDescription="Wi-Fi" />
                 <ImageView android:id="@+id/icon_settings" style="@style/IconButton" android:src="@drawable/ic_settings" android:contentDescription="Settings" />
-                <!-- Shown only while the Play Store has updates waiting -->
-                <ImageView android:id="@+id/icon_bell" style="@style/IconButton" android:src="@drawable/ic_bell" android:contentDescription="App updates" android:visibility="gone" />
+                <!-- Norton TV: the updates bell's spot is the VPN button (green while a VPN is on; opens NordVPN).
+                     Shown when NordVPN is installed or a VPN is on. -->
+                <ImageView android:id="@+id/icon_bell" style="@style/IconButton" android:src="@drawable/ic_vpn" android:contentDescription="VPN" android:visibility="gone" />
             </LinearLayout>
 
             <TextView
