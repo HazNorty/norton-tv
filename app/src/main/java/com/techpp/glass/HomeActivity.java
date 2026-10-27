@@ -2466,7 +2466,9 @@ public class HomeActivity extends Activity {
 
     /** Credits for the data Talkies shows; TMDB's wording is what its terms ask for. */
     private void openAbout() {
-        beginMenu(settingsAt, "Talkies · MIT License");
+        String version = "";
+        try { version = " " + pm.getPackageInfo(getPackageName(), 0).versionName; } catch (PackageManager.NameNotFoundException ignored) { }
+        beginMenu(settingsAt, "Talkies" + version + "  ·  MIT License");
         String[][] credits = {
                 {"Weather", "Open-Meteo.com (CC BY 4.0)"},
                 {"Airport temperatures", "aviationweather.gov (NOAA)"},

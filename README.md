@@ -7,6 +7,8 @@ A small, ad-free home screen for Android TV and Google TV: one calm screen, ligh
 launcher); it adapts to the TV's country (picks, cricket, °C or °F) and screen, but other TVs and countries haven't
 been tested.
 
+**Version 0.2.0** (beta). What changed in each version: [CHANGELOG.md](CHANGELOG.md).
+
 Talkies only replaces the home screen: it doesn't remove the TV maker's apps, ads services or tracking. To do that
 too, use [CleanYourTV](https://github.com/Gathin23/cleanyourtv) first; Talkies works alongside it.
 

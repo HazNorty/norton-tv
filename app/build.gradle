@@ -7,8 +7,9 @@ android {
         applicationId 'com.techpp.glass'
         minSdk 30          // the TV runs Android 11 (API 30)
         targetSdk 35
-        versionCode 1
-        versionName '1.0'
+        // Each release: versionName as in CHANGELOG.md, versionCode one higher (Android installs only higher codes as updates).
+        versionCode 2
+        versionName '0.2.0'
     }
     buildTypes {
         release {
