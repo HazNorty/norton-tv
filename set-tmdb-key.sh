@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 DEV="$(tv_default)"; REMOVE=0
 for a in "$@"; do [ "$a" = "--remove" ] && REMOVE=1 || DEV="$a"; done
 need_tv
-F=/sdcard/Android/data/com.techpp.glass/files
+F=/sdcard/Android/data/com.haznorty.nortontv/files
 adb connect "$DEV" >/dev/null 2>&1 || true
 
 if [ "$REMOVE" = 1 ]; then
