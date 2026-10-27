@@ -60,6 +60,12 @@ final class Trending {
 
     /** TMDB provider name (lowercase substring) → TV app package, and the name we show. */
     private static final String[][] SERVICES = {
+        // Norton TV: the UK players are tiles of Norton TV's own (PlayerActivity), keyed "player:…".
+        {"bbc iplayer", "player:iplayer", "BBC iPlayer"},
+        {"itvx", "player:itvx", "ITVX"},
+        {"channel 4", "player:channel4", "Channel 4"},
+        {"my5", "player:my5", "My5"},
+        {"channel 5", "player:my5", "My5"},
         {"netflix", "com.netflix.ninja", "Netflix"},
         {"prime video", "com.amazon.amazonvideo.livingroom", "Prime Video"},
         {"hotstar", "in.startv.hotstar", "JioHotstar"},
@@ -472,6 +478,7 @@ final class Trending {
     }
 
     private boolean installed(String pkg) {
+        if (pkg.startsWith(PlayerActivity.KEY_PREFIX)) return PlayerActivity.available(ctx.getPackageManager());
         try {
             return ctx.getPackageManager().getApplicationInfo(pkg, 0).enabled;
         } catch (PackageManager.NameNotFoundException e) {

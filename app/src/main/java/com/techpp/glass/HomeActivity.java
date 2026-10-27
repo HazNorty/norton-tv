@@ -255,6 +255,7 @@ public class HomeActivity extends Activity {
 
         // Banners are prepared at the size of the largest focused tile (an All apps tile at 110%).
         AppEntry.setBannerSize(px(GRID_TILE_W * 1.10f), px(GRID_TILE_H * 1.10f));
+        AppEntry.setFont(getResources().getFont(R.font.outfit));
         trending = new Trending(this);
         weather = new Weather(this);
         cricket = new Cricket(this);
@@ -414,8 +415,11 @@ public class HomeActivity extends Activity {
         updateScore();
     }
 
-    /** Control Center → Live scores: "both" (the default), "cricket", "football" or "off". */
-    private String scores() { return prefs.getString("scores", "both"); }
+    /**
+     * Norton TV settings → Live scores: "football" (the default) or "off". Norton TV has no cricket: anything else
+     * saved reads as football, so Cricket never fetches (its Match class still carries the football scores).
+     */
+    private String scores() { return "off".equals(prefs.getString("scores", "football")) ? "off" : "football"; }
     private List<Cricket.Match> cricketShown() { return scores().equals("both") || scores().equals("cricket") ? matches : new ArrayList<>(); }
     private List<Cricket.Match> footballShown() { return scores().equals("both") || scores().equals("football") ? footballMatches : new ArrayList<>(); }
 
@@ -509,9 +513,16 @@ public class HomeActivity extends Activity {
         Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
         List<AppEntry> all = new ArrayList<>();
         Set<String> seen = new HashSet<>(), hidden = hiddenApps();
-        for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
+        boolean players = PlayerActivity.available(pm);
+        for (ResolveInfo ri : pm.queryIntentActivities(q, PackageManager.GET_META_DATA)) {
             String p = ri.activityInfo.packageName;
-            if (p.equals(getPackageName()) || hidden.contains(p)) continue;
+            if (p.equals(getPackageName())) {
+                // Norton TV's own entries: only the UK player tiles, and only on a TV with Sony's HbbTV launcher.
+                AppEntry player = new AppEntry(ri.activityInfo, String.valueOf(ri.loadLabel(pm)).trim());
+                if (players && player.isPlayer() && !hidden.contains(player.pkg) && seen.add(player.pkg)) all.add(player);
+                continue;
+            }
+            if (hidden.contains(p)) continue;
             Intent main = pm.getLeanbackLaunchIntentForPackage(p);
             // Some apps expose several TV entries (e.g. input shortcuts); keep the main one.
             if (main != null && main.getComponent() != null
@@ -1586,9 +1597,9 @@ public class HomeActivity extends Activity {
             start(new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.hotstar.com/in/explore")).setPackage(Cricket.HOTSTAR));
             return;
         }
-        Intent i = p.pkg == null ? null : pm.getLeanbackLaunchIntentForPackage(p.pkg);
+        Intent i = launchIntentFor(p.pkg);
         if (i != null) start(i);
-        else if (p.extra instanceof Cricket.Match && ((Cricket.Match) p.extra).football) Toast.makeText(this, "Talkies doesn't know where to watch football yet", Toast.LENGTH_SHORT).show();
+        else if (p.extra instanceof Cricket.Match && ((Cricket.Match) p.extra).football) Toast.makeText(this, "Norton TV doesn't know where to watch football yet", Toast.LENGTH_SHORT).show();
         else if (p.extra instanceof Cricket.Match) Toast.makeText(this, "None of your apps has a card for this match", Toast.LENGTH_SHORT).show();
     }
 
@@ -1606,7 +1617,7 @@ public class HomeActivity extends Activity {
         if (pm.resolveActivity(i, 0) == null) {
             Intent tv = new Intent(Intent.ACTION_MAIN).setClassName("com.android.tv.settings", "com.android.tv.settings.MainSettings");
             if (pm.resolveActivity(tv, 0) != null) i = tv;
-            else Toast.makeText(this, "This TV has no settings app Talkies can open", Toast.LENGTH_SHORT).show();
+            else Toast.makeText(this, "This TV has no settings app Norton TV can open", Toast.LENGTH_SHORT).show();
         }
         start(i);
     }
@@ -1979,9 +1990,6 @@ public class HomeActivity extends Activity {
         addRow("TMDB key", tmdb == null ? "Not set" : Keys.masked(tmdb), () -> askText("TMDB key",
                 "For the Trending and New picks. Free at themoviedb.org → Settings → API: the API Key or the API Read "
                         + "Access Token." + paste, null, true, tmdb != null, text -> saveKey(Keys.TMDB, "TMDB", text, 0)), true);
-        addRow("Cricket key", cricket == null ? "Not set" : Keys.masked(cricket), () -> askText("CricketData key",
-                "For live cricket scores. Free at cricketdata.org (100 requests a day, enough for Talkies)." + paste,
-                null, true, cricket != null, text -> saveKey(Keys.CRICKET, "CricketData", text, 1)), true);
         // Coordinates pinpoint a home, so the row (and any screenshot of it) just says so; place names show as typed.
         String where = area == null ? "Not set" : area.matches("[-+0-9.,\\s]+") ? "Coordinates"
                 : area.length() > 22 ? area.substring(0, 21) + "…" : area;
@@ -2042,7 +2050,7 @@ public class HomeActivity extends Activity {
                 }
                 Toast.makeText(this, result == Keys.OK
                         ? "The key works. " + (file.equals(Keys.TMDB) ? "Picks arrive" : "Scores arrive") + " in a minute"
-                        : "Couldn't reach " + service + " to check it. Saved; Talkies will try it later", Toast.LENGTH_LONG).show();
+                        : "Couldn't reach " + service + " to check it. Saved; Norton TV will try it later", Toast.LENGTH_LONG).show();
                 if (zone == Z_MENU) openKeysAndLocation(row);
                 refreshOnline();
             });
@@ -2300,7 +2308,7 @@ public class HomeActivity extends Activity {
         if (canUninstall(a.pkg)) {
             addRow("Uninstall", null, () -> start(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + a.pkg))), false);
         }
-        addRow("App info", null, () -> start(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        if (!a.isPlayer()) addRow("App info", null, () -> start(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + a.pkg))), false);
         showMenu(240);
     }
@@ -2338,9 +2346,12 @@ public class HomeActivity extends Activity {
         Toast.makeText(this, app.label + " moved to All apps; " + next.label + " is in the dock", Toast.LENGTH_SHORT).show();
     }
 
-    /** Apps you hid (Hide in an app's hold-OK menu): left out of the dock and All apps, still installed. */
+    /**
+     * Apps you hid (Hide in an app's hold-OK menu): left out of the dock and All apps, still installed. The Play Store
+     * starts hidden: the TV needs it for updates, but it isn't something to open from the home screen.
+     */
     private Set<String> hiddenApps() {
-        String s = prefs.getString("hidden_apps", "");
+        String s = prefs.getString("hidden_apps", "com.android.vending");
         return s.isEmpty() ? new HashSet<>() : new HashSet<>(Arrays.asList(s.split(",")));
     }
 
@@ -2359,7 +2370,7 @@ public class HomeActivity extends Activity {
         saveOrder();
         setHidden(pkg, true);
         reloadApps();
-        Toast.makeText(this, app.label + " hidden. Talkies settings → Hidden apps brings it back", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, app.label + " hidden. Norton TV settings → Hidden apps brings it back", Toast.LENGTH_LONG).show();
     }
 
     /** Talkies settings → Hidden apps: OK on one shows it again (at the end of All apps). */
@@ -2368,6 +2379,8 @@ public class HomeActivity extends Activity {
         List<String> pkgs = new ArrayList<>(hiddenApps());
         List<String[]> rows = new ArrayList<>();
         for (String p : pkgs) {
+            String player = playerLabel(p);
+            if (player != null) { rows.add(new String[]{p, player}); continue; }
             try {
                 rows.add(new String[]{p, String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(p, 0)))});
             } catch (PackageManager.NameNotFoundException e) {
@@ -2386,6 +2399,17 @@ public class HomeActivity extends Activity {
         }
         if (rows.isEmpty()) addRow("No hidden apps", null, () -> { }, true);
         showMenu(360);
+    }
+
+    /** A UK player tile's name from its key ("player:itvx" → "ITVX"), or null when the key isn't a player's. */
+    private String playerLabel(String key) {
+        if (!key.startsWith(PlayerActivity.KEY_PREFIX)) return null;
+        Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).setPackage(getPackageName());
+        for (ResolveInfo ri : pm.queryIntentActivities(q, PackageManager.GET_META_DATA)) {
+            AppEntry a = new AppEntry(ri.activityInfo, String.valueOf(ri.loadLabel(pm)).trim());
+            if (a.pkg.equals(key)) return a.label;
+        }
+        return null;
     }
 
     /** System apps (and Talkies) can't be uninstalled from here; Android's own dialog asks before removing one. */
@@ -2419,9 +2443,20 @@ public class HomeActivity extends Activity {
         menuTile = z == Z_PICKS ? picksRow.anchorCard() : chanCards.get(r).get(c);
         menuClosed = () -> { if (z == Z_PICKS) focusPicks(anchor); else focusChan(r, c); };
         addRow("Remove from Continue", null, () -> removeFromContinue(p), false);
-        Intent app = p.pkg == null ? null : pm.getLeanbackLaunchIntentForPackage(p.pkg);
-        if (app != null) addRow("Open " + Channels.label(pm, p.pkg), null, () -> start(app), false);
+        Intent app = launchIntentFor(p.pkg);
+        AppEntry entry = appFor(p.pkg);
+        if (app != null) addRow("Open " + (entry != null ? entry.label : Channels.label(pm, p.pkg)), null, () -> start(app), false);
         showMenu(320);
+    }
+
+    /** How to open a pick's app: a UK player tile (key "player:…") through its alias, any other app as usual. */
+    private Intent launchIntentFor(String pkg) {
+        if (pkg == null) return null;
+        if (pkg.startsWith(PlayerActivity.KEY_PREFIX)) {
+            AppEntry a = appFor(pkg);
+            return a == null ? null : a.launchIntent();
+        }
+        return pm.getLeanbackLaunchIntentForPackage(pkg);
     }
 
     /** "pkg / title / episode line": a new episode of the same show is a new key, so it comes back. */
@@ -2528,13 +2563,7 @@ public class HomeActivity extends Activity {
 
     private void openControlCenter() {
         beginMenu(P_CONTROL, "Control Center");
-        final View[] timer = new View[1];
-        timer[0] = addRow("Sleep timer", sleepStatus(), () -> {
-            if (!Sleep.available()) { needsTurnOffSetup(); return; }
-            Sleep.cycle(this);
-            setStatus(timer[0], sleepStatus());
-        }, true);
-        addRow("Turn off now", null, () -> { if (!Sleep.now()) needsTurnOffSetup(); }, false);
+        // Norton TV has no accessibility service, so no Sleep timer, Turn off now or Restart rows.
         final View[] mem = new View[1];
         mem[0] = addRow("Free up memory", availableMb() + " MB free", () -> freeMemory(mem[0]), true);
         addRow("Network", networkName(), () -> start(new Intent(Settings.ACTION_WIFI_SETTINGS)), false);
@@ -2550,9 +2579,7 @@ public class HomeActivity extends Activity {
         }, false);
         addRow("Screensaver", null, () -> start(new Intent(Intent.ACTION_MAIN)
                 .setClassName("com.android.systemui", "com.android.systemui.Somnambulator")), false);
-        // The TV's own power menu, so it still asks before restarting.
-        addRow("Restart…", null, () -> { if (!SleepService.powerMenu()) needsTurnOffSetup(); }, false);
-        addRow("Talkies settings", null, () -> openTalkiesSettings(P_CONTROL), false);
+        addRow("Norton TV settings", null, () -> openTalkiesSettings(P_CONTROL), false);
         showMenu(350);
     }
 
@@ -2562,7 +2589,7 @@ public class HomeActivity extends Activity {
      */
     private void openTalkiesSettings(int anchor) {
         settingsAt = anchor;
-        beginMenu(anchor, "Talkies settings");
+        beginMenu(anchor, "Norton TV settings");
         final View[] look = new View[1];
         look[0] = addRow("Appearance", APPEARANCE[prefs.getInt("appearance", 0)], () -> {
             int mode = (prefs.getInt("appearance", 0) + 1) % APPEARANCE.length;
@@ -2588,7 +2615,7 @@ public class HomeActivity extends Activity {
         }, true);
         final View[] sc = new View[1];
         sc[0] = addRow("Live scores", scoresLabel(), () -> {
-            String[] order = {"both", "cricket", "football", "off"};
+            String[] order = {"football", "off"};
             String next = order[(Arrays.asList(order).indexOf(scores()) + 1) % order.length];
             prefs.edit().putString("scores", next).apply();
             setStatus(sc[0], scoresLabel());
@@ -2602,18 +2629,10 @@ public class HomeActivity extends Activity {
         addRow("Channels", null, this::openChannelsEditor, false);
         int hiddenCount = hiddenApps().size();
         if (hiddenCount > 0) addRow("Hidden apps", String.valueOf(hiddenCount), this::openHiddenApps, false);
-        addRow("Remote keys", RemoteKeys.all(this).isEmpty() ? null : RemoteKeys.all(this).size() + " set",
-                this::openRemoteKeys, false);
         addRow("Keys and location", null, () -> openKeysAndLocation(0), false);
         final View[] adb = new View[1];
         adb[0] = addRow("Network debugging", "Checking…", this::openNetworkDebugging, false);
         checkNetworkDebugging(st -> { if (adb[0].isAttachedToWindow()) setStatus(adb[0], st); });
-        final View[] wake = new View[1];
-        wake[0] = addRow("Talkies at power-on", wakeLabel(), () -> {
-            if (!SleepService.isRunning()) { needsTurnOffSetup(); return; }
-            prefs.edit().putString("home_at_power_on", SleepService.homeOnWake(this) ? "boot" : "always").apply();
-            setStatus(wake[0], wakeLabel());
-        }, true);
         final View[] ports = new View[1];
         ports[0] = addRow("Empty inputs", prefs.getBoolean("inputs_connected_only", false) ? "Under More inputs" : "Shown", () -> {
             boolean only = !prefs.getBoolean("inputs_connected_only", false);
@@ -2634,18 +2653,14 @@ public class HomeActivity extends Activity {
         showMenu(350);
     }
 
-    /** After a restart only (the default), or every time the TV wakes from standby too. */
-    private String wakeLabel() { return SleepService.homeOnWake(this) ? "Every time" : "After a restart"; }
-
     /** Credits for the data Talkies shows; TMDB's wording is what its terms ask for. */
     private void openAbout() {
         String version = "";
         try { version = " " + pm.getPackageInfo(getPackageName(), 0).versionName; } catch (PackageManager.NameNotFoundException ignored) { }
-        beginMenu(settingsAt, "Talkies" + version + "  ·  MIT License");
+        beginMenu(settingsAt, "Norton TV" + version + "  ·  based on Talkies (MIT)");
         String[][] credits = {
                 {"Weather", "Open-Meteo.com (CC BY 4.0)"},
                 {"Airport temperatures", "aviationweather.gov (NOAA)"},
-                {"Cricket scores", "CricketData.org"},
                 {"Football scores", "ESPN (public scoreboard)"},
                 {"Speed test", "Cloudflare"},
                 {"Code from", "tv-vibehack/CleanYourTV, Free My TV, Matinee"},

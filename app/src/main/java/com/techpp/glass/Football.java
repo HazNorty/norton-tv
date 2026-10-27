@@ -66,7 +66,7 @@ final class Football {
     private static final Map<String, String[]> DEFAULTS = new HashMap<>();
     static {
         DEFAULTS.put("IN", new String[]{"eng.1", "uefa.champions", "ind.1"});
-        DEFAULTS.put("GB", new String[]{"eng.1", "uefa.champions", "sco.1"});
+        DEFAULTS.put("GB", new String[]{"eng.1"});  // Norton TV: the Premier League only
         DEFAULTS.put("IE", new String[]{"eng.1", "uefa.champions"});
         DEFAULTS.put("US", new String[]{"usa.1", "eng.1", "uefa.champions"});
         DEFAULTS.put("CA", new String[]{"usa.1", "eng.1", "uefa.champions"});
@@ -121,8 +121,10 @@ final class Football {
         } else {
             String[] d = DEFAULTS.get(Region.country(ctx));
             on.addAll(Arrays.asList(d != null ? d : new String[]{"eng.1", "uefa.champions"}));
-            on.add("fifa.world");
-            on.add("uefa.euro");
+            if (!"GB".equals(Region.country(ctx))) {  // Norton TV: in the UK, no tournaments unless you turn them on
+                on.add("fifa.world");
+                on.add("uefa.euro");
+            }
         }
         List<String> out = new ArrayList<>();
         for (String[] l : LEAGUES) if (on.contains(l[0])) out.add(l[0]);

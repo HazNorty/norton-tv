@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- The starting dock, left to right (7 apps). Rearrange on the TV by holding OK on an app;
-         apps that aren't installed are skipped and the dock fills up from the rest. -->
+         apps that aren't installed are skipped and the dock fills up from the rest.
+         "player:…" entries are Norton TV's UK player tiles (see PlayerActivity). -->
     <string-array name="dock_packages">
-        <item>in.startv.hotstar</item>
+        <item>player:iplayer</item>
+        <item>player:itvx</item>
+        <item>player:channel4</item>
+        <item>player:my5</item>
         <item>com.google.android.youtube.tv</item>
-        <item>com.netflix.ninja</item>
-        <item>com.amazon.amazonvideo.livingroom</item>
-        <item>com.graymatrix.did</item>
-        <item>tv.airtel.xstream.tvapp</item>
-        <item>com.apple.atve.androidtv.appletv</item>
+        <item>com.google.android.youtube.tvmusic</item>
+        <item>com.sony.dtv.tvx</item>
     </string-array>
 </resources>

@@ -23,10 +23,20 @@ final class AppEntry {
 
     AppEntry(ActivityInfo info, String label) {
         this.info = info;
-        this.pkg = info.packageName;
+        // A UK player tile (PlayerActivity alias) gets a key of its own, as the four share Norton TV's package.
+        String player = info.metaData == null ? null : info.metaData.getString("player");
+        this.pkg = player != null ? PlayerActivity.KEY_PREFIX + player : info.packageName;
         this.label = label;
         this.component = new ComponentName(info.packageName, info.name);
     }
+
+    /** One of the UK catch-up player tiles: not a real app, so it can't be uninstalled and has no App info. */
+    boolean isPlayer() { return pkg.startsWith(PlayerActivity.KEY_PREFIX); }
+
+    private static android.graphics.Typeface font;
+
+    /** The typeface player tiles are lettered in (Outfit, as the rest of the home screen). */
+    static void setFont(android.graphics.Typeface f) { font = f; }
 
     Intent launchIntent() {
         return new Intent(Intent.ACTION_MAIN)
@@ -43,6 +53,7 @@ final class AppEntry {
     private void load(PackageManager pm) {
         if (loaded) return;
         loaded = true;
+        if (isPlayer()) { banner = playerBanner(pm); return; }
         banner = sharpBanner(pm);
         if (banner == null) banner = info.loadBanner(pm);
         if (banner == null) banner = info.applicationInfo.loadBanner(pm);
@@ -76,6 +87,42 @@ final class AppEntry {
             return new android.graphics.drawable.BitmapDrawable(res, out);
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /**
+     * A player tile's banner, drawn here as the players ship none: its colour (the alias's "colour" meta-data) with
+     * a soft lighter band at the top, and its name centred in Outfit.
+     */
+    private Drawable playerBanner(PackageManager pm) {
+        int colour = 0xFF3A3A3C;
+        // Android turns a "#RRGGBB" meta-data value into an int when it reads the manifest.
+        Object v = info.metaData.get("colour");
+        if (v instanceof Integer) colour = (Integer) v;
+        else if (v instanceof String) try { colour = Color.parseColor((String) v); } catch (RuntimeException ignored) { }
+        Bitmap b = Bitmap.createBitmap(bannerW, bannerH, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        c.drawColor(colour);
+        android.graphics.Paint sheen = new android.graphics.Paint();
+        sheen.setShader(new android.graphics.LinearGradient(0, 0, 0, bannerH, 0x33FFFFFF, 0x00FFFFFF,
+                android.graphics.Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, bannerW, bannerH, sheen);
+        android.graphics.Paint text = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        text.setColor(Color.WHITE);
+        text.setTypeface(font != null ? font : android.graphics.Typeface.DEFAULT_BOLD);
+        text.setFakeBoldText(font != null);
+        text.setTextAlign(android.graphics.Paint.Align.CENTER);
+        text.setTextSize(bannerH * 0.22f);
+        float max = bannerW * 0.82f;
+        if (text.measureText(label) > max) text.setTextSize(text.getTextSize() * max / text.measureText(label));
+        android.graphics.Paint.FontMetrics fm = text.getFontMetrics();
+        c.drawText(label, bannerW / 2f, bannerH / 2f - (fm.ascent + fm.descent) / 2f, text);
+        b.setHasMipMap(true);
+        b.setDensity(android.util.DisplayMetrics.DENSITY_DEFAULT);
+        try {
+            return new android.graphics.drawable.BitmapDrawable(pm.getResourcesForApplication(info.applicationInfo), b);
+        } catch (PackageManager.NameNotFoundException e) {
+            return new android.graphics.drawable.BitmapDrawable(null, b);
         }
     }
 
