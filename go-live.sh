@@ -47,7 +47,8 @@ sh pm grant $PKG android.permission.READ_TV_LISTINGS || true
 for f in tmdb_key.txt calendars.txt location.txt; do
   if [ -f "$HERE/$f" ]; then
     sh mkdir -p /sdcard/Android/data/$PKG/files
-    adb -s "$DEV" push "$HERE/$f" /sdcard/Android/data/$PKG/files/$f >/dev/null && echo "   pushed $f"
+    SRC="$HERE/$f"; case "$(uname -s)" in MINGW*|MSYS*) SRC="$(cygpath -m "$SRC")" ;; esac
+    adb -s "$DEV" push "$SRC" /sdcard/Android/data/$PKG/files/$f >/dev/null && echo "   pushed $f"
   fi
 done
 
