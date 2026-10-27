@@ -115,10 +115,15 @@ final class WatchNext {
     /** Up to 1280 px: these fill the large card (about 1040 px on screen). */
     private static File cached(Context c, File dir, String uri) { return cached(c, dir, uri, 1280); }
 
-    /** The artwork as a small JPEG on disk (at most `width` px wide), downloaded once per address. Also used for channels. */
+    /**
+     * The artwork as a small JPEG on disk (at most `width` px wide), downloaded once per address; a PNG instead when it
+     * has transparency (team logos), which JPEG would fill with black. Also used for channels and match cards.
+     */
     static File cached(Context c, File dir, String uri, int width) {
-        File f = new File(dir, Integer.toHexString(uri.hashCode()) + "_" + width + ".jpg");
+        String base = Integer.toHexString(uri.hashCode()) + "_" + width;
+        File f = new File(dir, base + ".jpg"), png = new File(dir, base + ".png");
         if (f.isFile()) return f;
+        if (png.isFile()) return png;
         if (!dir.isDirectory() && !dir.mkdirs()) return null;
         try (InputStream in = open(c.getContentResolver(), uri)) {
             if (in == null) return null;
@@ -126,9 +131,12 @@ final class WatchNext {
             Bitmap b = BitmapFactory.decodeStream(in, null, o);
             if (b == null) return null;
             if (b.getWidth() > width) b = Bitmap.createScaledBitmap(b, width, Math.max(1, b.getHeight() * width / b.getWidth()), true);
-            File tmp = new File(dir, f.getName() + ".part");
-            try (OutputStream out = new FileOutputStream(tmp)) { b.compress(Bitmap.CompressFormat.JPEG, 85, out); }
-            return tmp.renameTo(f) ? f : null;
+            boolean alpha = b.hasAlpha();
+            File done = alpha ? png : f, tmp = new File(dir, done.getName() + ".part");
+            try (OutputStream out = new FileOutputStream(tmp)) {
+                b.compress(alpha ? Bitmap.CompressFormat.PNG : Bitmap.CompressFormat.JPEG, 85, out);
+            }
+            return tmp.renameTo(done) ? done : null;
         } catch (Exception e) {
             Log.w(TAG, "Artwork failed: " + e.getClass().getSimpleName());
             return null;

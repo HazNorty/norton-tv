@@ -99,6 +99,8 @@ final class Cricket {
         String watchPkg, watchUri;
         String search;                            // no match card found: typed into the app's search ("India vs New Zealand")
         int rank;                                 // lower shows first
+        boolean football;                         // a Football match (same card): kind is the league, status the clock
+        String short1, short2;                    // football: three-letter names for the score line ("ARS")
     }
 
     interface Listener { void onMatches(List<Match> matches); }

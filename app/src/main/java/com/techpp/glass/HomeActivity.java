@@ -126,7 +126,8 @@ public class HomeActivity extends Activity {
     private Trending trending;
     private Weather weather;
     private Cricket cricket;
-    private List<Cricket.Match> matches = new ArrayList<>();
+    private Football football;
+    private List<Cricket.Match> matches = new ArrayList<>(), footballMatches = new ArrayList<>();
     private List<Channels.Channel> appChannels = new ArrayList<>();  // the shown app channels, without Cricket
     private TextView score;
     private String weatherLine;
@@ -251,6 +252,7 @@ public class HomeActivity extends Activity {
         trending = new Trending(this);
         weather = new Weather(this);
         cricket = new Cricket(this);
+        football = new Football(this);
         score = findViewById(R.id.score);
         weatherLine = weather.cached();
         day = isDayNow();
@@ -406,16 +408,36 @@ public class HomeActivity extends Activity {
         updateScore();
     }
 
-    /** "● LIVE  IND 245/4 (42.3) v AUS", or today's next match, or today's result; hidden when there's none. */
+    /** Control Center → Live scores: "both" (the default), "cricket", "football" or "off". */
+    private String scores() { return prefs.getString("scores", "both"); }
+    private List<Cricket.Match> cricketShown() { return scores().equals("both") || scores().equals("cricket") ? matches : new ArrayList<>(); }
+    private List<Cricket.Match> footballShown() { return scores().equals("both") || scores().equals("football") ? footballMatches : new ArrayList<>(); }
+
+    /**
+     * "● LIVE  IND 245/4 (42.3) v AUS" or "● LIVE  67'  ·  ARS 2–1 CHE", or today's next match, or today's result;
+     * hidden when there's none. A live match wins, cricket before football.
+     */
     private void updateScore() {
-        Cricket.Match m = matches.isEmpty() ? null : matches.get(0);
+        List<Cricket.Match> c = cricketShown(), f = footballShown();
+        Cricket.Match m = !c.isEmpty() && c.get(0).live ? c.get(0) : !f.isEmpty() && f.get(0).live ? f.get(0)
+                : !c.isEmpty() ? c.get(0) : !f.isEmpty() ? f.get(0) : null;
         if (m == null) {
             score.setVisibility(View.GONE);
             credit.setAlpha(1f);
             return;
         }
         SpannableStringBuilder b = new SpannableStringBuilder();
-        if (m.live) {
+        if (m.football) {
+            if (m.live) {
+                b.append("● LIVE  ");
+                b.setSpan(new ForegroundColorSpan(0xFFFF453A), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                b.append(m.status).append("  ·  ").append(m.short1).append(" ").append(m.s1).append("–").append(m.s2).append(" ").append(m.short2);
+            } else if (!m.ended) {
+                b.append(m.short1).append(" v ").append(m.short2).append(m.start == null ? "" : "  ·  " + m.start).append("  ·  ").append(m.kind);
+            } else {
+                b.append(m.short1).append(" ").append(m.s1).append("–").append(m.s2).append(" ").append(m.short2).append("  ·  ").append(m.status);
+            }
+        } else if (m.live) {
             b.append("● LIVE  ");
             b.setSpan(new ForegroundColorSpan(0xFFFF453A), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (!m.kind.isEmpty()) b.append(m.kind).append("  ·  ");
@@ -433,6 +455,12 @@ public class HomeActivity extends Activity {
 
     private void onMatches(List<Cricket.Match> list) {
         matches = list;
+        updateScore();
+        if (zone != Z_CHAN) showChannels(appChannels);
+    }
+
+    private void onFootball(List<Cricket.Match> list) {
+        footballMatches = list;
         updateScore();
         if (zone != Z_CHAN) showChannels(appChannels);
     }
@@ -607,27 +635,11 @@ public class HomeActivity extends Activity {
         });
     }
 
-    /** The channel rows: Cricket first while there are matches, then your app channels. */
+    /** The channel rows: Cricket and Football first while there are matches (Live scores), then your app channels. */
     private void showChannels(List<Channels.Channel> apps) {
         List<Channels.Channel> list = new ArrayList<>();
-        if (!matches.isEmpty()) {
-            Channels.Channel c = new Channels.Channel();
-            c.key = "cricket";
-            c.name = "Cricket";
-            c.title = "Cricket";
-            for (Cricket.Match m : matches) {
-                Trending.Pick p = new Trending.Pick();
-                p.kind = "cricket";
-                p.extra = m;
-                p.id = (m.id + m.s1 + m.s2 + m.status).hashCode();
-                p.title = m.name;
-                p.meta = (m.kind.isEmpty() ? "" : m.kind + " · ") + m.status;
-                p.pkg = m.watchPkg;
-                p.intentUri = m.watchUri;
-                c.items.add(p);
-            }
-            list.add(c);
-        }
+        if (!cricketShown().isEmpty()) list.add(scoresRow("cricket", "Cricket", cricketShown()));
+        if (!footballShown().isEmpty()) list.add(scoresRow("football", "Football", footballShown()));
         list.addAll(apps);
         {
             {
@@ -650,6 +662,29 @@ public class HomeActivity extends Activity {
         }
     }
 
+    private Channels.Channel scoresRow(String key, String title, List<Cricket.Match> list) {
+        Channels.Channel c = new Channels.Channel();
+        c.key = key;
+        c.name = title;
+        c.title = title;
+        for (Cricket.Match m : list) {
+            Trending.Pick p = new Trending.Pick();
+            p.kind = key;
+            p.extra = m;
+            p.id = (m.id + m.s1 + m.s2 + m.status).hashCode();
+            p.title = m.name;
+            // A football match that hasn't started has no status yet: say when it starts instead.
+            String st = m.status.isEmpty() && m.start != null ? "starts " + m.start : m.status;
+            p.meta = m.kind.isEmpty() ? st : st.isEmpty() ? m.kind : m.kind + " · " + st;
+            p.pkg = m.watchPkg;
+            p.intentUri = m.watchUri;
+            c.items.add(p);
+        }
+        return c;
+    }
+
+    private static boolean isScores(Channels.Channel ch) { return "cricket".equals(ch.key) || "football".equals(ch.key); }
+
     private void buildChannelRows(List<Channels.Channel> list) {
         chanRows = list;
         channelsBox.removeAllViews();
@@ -670,14 +705,14 @@ public class HomeActivity extends Activity {
             header.setOrientation(LinearLayout.HORIZONTAL);
             header.setGravity(android.view.Gravity.CENTER_VERTICAL);
             header.setPadding(px(40), 0, px(40), 0);
-            if ("cricket".equals(ch.key)) {
+            if (isScores(ch)) {
                 TextView dot = new TextView(this);
                 dot.setText("●");
                 dot.setTextColor(0xFFFF453A);
                 dot.setTextSize(12);
                 LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 dl.rightMargin = px(8);
-                if (!matches.isEmpty() && matches.get(0).live) header.addView(dot, dl);
+                if (!ch.items.isEmpty() && ((Cricket.Match) ch.items.get(0).extra).live) header.addView(dot, dl);
             } else if (ch.pkg != null) {
                 ImageView icon = new ImageView(this);
                 try {
@@ -760,7 +795,7 @@ public class HomeActivity extends Activity {
     }
 
     /** Cricket cards are wider: a Test's scores ("425/9d & 84/1 (25)") need the room. */
-    private static int cardW(Channels.Channel ch) { return "cricket".equals(ch.key) ? CRICKET_W : CH_W; }
+    private static int cardW(Channels.Channel ch) { return isScores(ch) ? CRICKET_W : CH_W; }
 
     /** A card in a channel row: its artwork (loaded in the background), or the app's banner and the title. */
     private View channelCard(Trending.Pick p) {
@@ -1508,6 +1543,7 @@ public class HomeActivity extends Activity {
         }
         Intent i = p.pkg == null ? null : pm.getLeanbackLaunchIntentForPackage(p.pkg);
         if (i != null) start(i);
+        else if (p.extra instanceof Cricket.Match && ((Cricket.Match) p.extra).football) Toast.makeText(this, "Talkies doesn't know where to watch football yet", Toast.LENGTH_SHORT).show();
         else if (p.extra instanceof Cricket.Match) Toast.makeText(this, "None of your apps has a card for this match", Toast.LENGTH_SHORT).show();
     }
 
@@ -1804,6 +1840,46 @@ public class HomeActivity extends Activity {
         if (state == TvInputManager.INPUT_STATE_CONNECTED) return name + "  ·  On";
         if (state == TvInputManager.INPUT_STATE_CONNECTED_STANDBY) return name + "  ·  Standby";
         return name;
+    }
+
+    // ---------------------------------------------------------------- live scores
+
+    private String scoresLabel() {
+        switch (scores()) {
+            case "cricket": return "Cricket";
+            case "football": return "Football";
+            case "off": return "Off";
+            default: return "Cricket and football";
+        }
+    }
+
+    /** One row per league, On when it's shown; OK turns it on or off. Leaving the menu fetches the new set. */
+    private void openFootballLeagues(int focus) {
+        beginMenu(P_CONTROL, football.customLeagues() ? "Football leagues"
+                : "Football leagues  ·  defaults for " + Region.name(Region.country(this)));
+        List<String> on = football.leagues();
+        for (String[] l : Football.LEAGUES) {
+            final View[] row = new View[1];
+            row[0] = addRow(l[1], on.contains(l[0]) ? "On" : null, () -> {
+                football.toggle(l[0]);
+                setStatus(row[0], football.leagues().contains(l[0]) ? "On" : null);
+                View heading = menu.getChildAt(0);
+                if (heading instanceof TextView && !menuItems.contains(heading)) ((TextView) heading).setText("Football leagues");
+            }, true);
+        }
+        if (football.customLeagues()) addRow("Back to the defaults", null, () -> {
+            football.useDefaults();
+            openFootballLeagues(0);
+        }, true);
+        menuClosed = () -> {
+            background.execute(() -> {
+                List<Cricket.Match> saved = football.cached();
+                runOnUiThread(() -> { onFootball(saved); refreshOnline(); });
+            });
+            focusTop(P_CONTROL);
+        };
+        showMenu(360);
+        focusMenu(focus);
     }
 
     // ---------------------------------------------------------------- keys and location
@@ -2208,6 +2284,19 @@ public class HomeActivity extends Activity {
             buildPicksRow(0);
             if (forYou) refreshOnline();
         }, true);
+        final View[] sc = new View[1];
+        sc[0] = addRow("Live scores", scoresLabel(), () -> {
+            String[] order = {"both", "cricket", "football", "off"};
+            String next = order[(Arrays.asList(order).indexOf(scores()) + 1) % order.length];
+            prefs.edit().putString("scores", next).apply();
+            setStatus(sc[0], scoresLabel());
+            updateScore();
+            chanSignature = "";
+            showChannels(appChannels);
+            refreshOnline();
+        }, true);
+        if (!scores().equals("off") && !scores().equals("cricket")) addRow("Football leagues", football.leagues().size() + " on",
+                () -> openFootballLeagues(0), false);
         addRow("Channels", null, this::openChannelsEditor, false);
         addRow("Remote keys", RemoteKeys.all(this).isEmpty() ? null : RemoteKeys.all(this).size() + " set",
                 this::openRemoteKeys, false);
@@ -2473,9 +2562,10 @@ public class HomeActivity extends Activity {
         updateInfo();
         refreshOnline();
         background.execute(() -> {
-            List<Cricket.Match> saved = cricket.cached();
+            List<Cricket.Match> saved = cricket.cached(), savedFootball = football.cached();
             runOnUiThread(() -> {
                 if (matches.isEmpty() && !saved.isEmpty()) onMatches(saved);
+                if (footballMatches.isEmpty() && !savedFootball.isEmpty()) onFootball(savedFootball);
                 refreshOnline();
             });
         });
@@ -2538,7 +2628,8 @@ public class HomeActivity extends Activity {
             Log.i(TAG, "Refresh skipped: " + (!inFront ? "another app in front" : !hasWindowFocus() ? "screensaver or dialog on top" : "display off"));
             return;
         }
-        cricket.refreshIfStale(this::onMatches);
+        if (!scores().equals("off") && !scores().equals("football")) cricket.refreshIfStale(this::onMatches);
+        if (scores().equals("both") || scores().equals("football")) football.refreshIfStale(this::onFootball);
         weather.refreshIfStale(this::onWeather);
         if (forYou) trending.refreshIfStale(this::onPicks);
         if (prefs.getBoolean("youtube_art", false)) RecentStore.upgradeArtwork(this, () -> {

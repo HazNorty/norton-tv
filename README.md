@@ -22,6 +22,9 @@ too, use [CleanYourTV](https://github.com/Gathin23/cleanyourtv) first; Talkies w
   Recommended, Prime Video…) and Watch Next; you choose which and their order
 - **Cricket**: a live score under the icons and a Cricket row above the channels, for international matches and
   your country's domestic competitions (optional, needs a free CricketData.org key)
+- **Football**: live scores from the leagues you pick (Premier League, Champions League, LaLiga, MLS, Indian Super
+  League and more; your country's by default), with no key needed. Control Center → **Live scores** shows cricket,
+  football, both or neither
 - Every other app under **All apps**, after the channels
 - A background that glows in the colour of the focused item's app (Netflix red, Prime Video blue…: the dock or
   All apps tile, the pick's app, or the channel row's app), or your own wallpaper; a white focus ring on the focused item. Moving
@@ -308,6 +311,22 @@ Set your key once (a free account at cricketdata.org gives one), the same way as
 `./set-cricket-key.sh --remove` turns cricket off. Both scripts press Home on the TV when done. The log shows what it
 found and where each Watch button points: `adb -s "$TALKIES_TV" logcat -d -s GlassCricket`.
 
+## Football
+
+Football works like cricket, with no key: the line under the weather shows the most relevant match
+("● LIVE  67'  ·  ARS 2–1 CHE", a live cricket match comes first), and a **Football** row with both clubs' badges,
+the score and the minute ("LIVE · Premier League · 67'"), kick-off time ("starts Wed 7:30 pm") or result.
+
+- **Which matches:** live now, starting within a day, or finished in the last 12 hours, from your leagues.
+- **Your leagues:** Control Center → **Football leagues**. Each country starts with its own (India: Premier League,
+  Champions League and Indian Super League; the UK: Premier League, Champions League and the Scottish Premiership;
+  the US: MLS, Premier League and Champions League…), plus the World Cup and the Euros when they're on. Press OK to
+  turn one on or off; **Back to the defaults** undoes your changes.
+- **Updates:** every 15 minutes, and every minute for a league with a match on, only while Talkies is in front.
+- **Data:** ESPN's public scoreboard. It's free and needs no key, but it isn't an official API: ESPN can change it
+  without notice, and then the Football row just stays away until Talkies is updated.
+- **Watching:** not yet. Which app shows which league differs by country, so OK on a match card says so for now.
+
 ## Control Center
 
 Go up to the icon buttons and choose the first one (sliders).
@@ -324,6 +343,8 @@ Go up to the icon buttons and choose the first one (sliders).
 | Appearance | Cycles Auto (light by day, dark at night) → Light → Dark |
 | For You | Shown or Hidden. Hidden removes the tabs and picks (the weather, time and date stay), Up from the dock goes to the icons, and TMDB picks aren't fetched |
 | Channels | Choose which app channels show below the dock, and their order |
+| Live scores | Cricket and football (default), Cricket, Football or Off: what the score line and the score rows show |
+| Football leagues | The leagues the Football row follows; see *Football* |
 | Remote keys | Give a remote button another job: open an app, Inputs, Talkies, or nothing. **Add a key**, press the button, choose. Navigation, OK, Back, Home, volume and power can't be changed |
 | Keys and location | Your TMDB key (picks), CricketData key (scores) and weather area. Type or paste each one; keys are tried with the service first and only saved if it accepts them. **Remove** clears one |
 | Network debugging | "On · port 5555" while computers on your network can control the TV over ADB (how Talkies was installed). **Turn off** (needs the permission below) or open Developer options; turning it on again is done in Developer options |
@@ -542,6 +563,7 @@ Data (also listed in the app, Control Center → About):
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); airport temperatures from NOAA's
   [aviationweather.gov](https://aviationweather.gov).
 - **Cricket:** [CricketData.org](https://cricketdata.org), with your own key.
+- **Football:** ESPN's public scoreboard (not an official API; Talkies isn't affiliated with ESPN).
 - **Speed test:** Cloudflare's public speed-test endpoint.
 
 Code (details and license texts in `THIRD_PARTY_NOTICES.md`, all MIT):
