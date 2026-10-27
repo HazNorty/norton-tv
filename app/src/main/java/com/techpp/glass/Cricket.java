@@ -48,6 +48,10 @@ final class Cricket {
     private static final String TAG = "GlassCricket";
     private static final long LIVE_MS = 15 * 60_000L, IDLE_MS = 60 * 60_000L, RETRY_MS = 10 * 60_000L;
     private static final int DAILY_STOP = 92;
+    /** Statuses of a match that's on but not being played right now ("Day 1: Stumps - …", "Lunch", "Rain delay"). */
+    private static final java.util.regex.Pattern PAUSED = java.util.regex.Pattern.compile(
+            "\\b(stumps|lunch|tea|dinner|rain|wet outfield|bad light|delay|delayed|play stopped|no play|suspended)\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
 
     /** Full-member and associate nations: a match between two of these (or their women's sides) is international. */
     private static final Set<String> NATIONS = new HashSet<>(Arrays.asList(
@@ -92,6 +96,7 @@ final class Cricket {
     static final class Match {
         String id, name, status, type, start;   // start: "HH:mm" local, for upcoming
         boolean live, ended, home, domestic, intl, test;
+        boolean paused;                           // on, but not playing now: stumps, lunch, tea, rain… (not "live")
         String kind;                              // "Test", "ODI", "T20I"; domestic "First-class", "One-day", "T20"
         String t1, t2, s1 = "", s2 = "";         // short names and score text ("245/4 (42.3)")
         String full1, full2;                      // full team names ("India", "New Zealand")
@@ -172,7 +177,7 @@ final class Cricket {
                 JSONObject innings = updateInnings(key, list);
                 for (Match m : list) applyInnings(m, innings);
                 boolean anyLive = false;
-                for (Match m : list) anyLive |= m.live;
+                for (Match m : list) anyLive |= m.live || m.paused;  // a paused match is checked as often: play resumes
                 prefs.edit().putLong("ok_at", System.currentTimeMillis()).putInt("hits", hits).putBoolean("any_live", anyLive).apply();
                 for (Match m : list) {
                     findStream(m);
@@ -200,7 +205,7 @@ final class Cricket {
         long now = System.currentTimeMillis();
         boolean first = true;
         for (Match m : list) {
-            if (!m.test || (!m.live && !m.ended)) continue;
+            if (!m.test || (!m.live && !m.paused && !m.ended)) continue;
             JSONObject rec = all.optJSONObject(m.id);
             // The Test shown first follows every refresh (15 min); others every 45 min; all of them 45 once the day's
             // requests run low.
@@ -270,8 +275,8 @@ final class Cricket {
         fixLastInnings(inns, m);
         for (int i = 0; i < inns.size() - 1; i++) inns.get(i).done = true;   // someone batted after it
         if (m.ended && !inns.isEmpty()) inns.get(inns.size() - 1).done = true;
-        m.s1 = teamScore(inns, m.full1.toLowerCase(Locale.ROOT), m.s1, m.live);
-        m.s2 = teamScore(inns, m.full2.toLowerCase(Locale.ROOT), m.s2, m.live);
+        m.s1 = teamScore(inns, m.full1.toLowerCase(Locale.ROOT), m.s1, m.live || m.paused);
+        m.s2 = teamScore(inns, m.full2.toLowerCase(Locale.ROOT), m.s2, m.live || m.paused);
     }
 
     /**
@@ -417,14 +422,20 @@ final class Cricket {
             m.type = o.optString("matchType", "").toUpperCase(Locale.ROOT);
             // The feed sometimes leaves a match "live" that never started ("Match starts at Oct 18…"): it isn't.
             m.live = "live".equals(ms) && !m.status.toLowerCase(Locale.ROOT).startsWith("match starts");
+            // A Test stays "live" in the feed for all five days; at stumps, a meal break or a rain delay nobody is
+            // playing, so it isn't live (a live football match wins the score line), only paused.
+            if (m.live && PAUSED.matcher(m.status).find()) {
+                m.live = false;
+                m.paused = true;
+            }
             m.ended = "result".equals(ms);
             m.domestic = domestic;
             m.home = homeTeam != null && (a[0].toLowerCase(Locale.ROOT).startsWith(homeTeam)
                     || b[0].toLowerCase(Locale.ROOT).startsWith(homeTeam));
             String gmt = o.optString("dateTimeGMT", "");
             // Live, or starting or finished today (a Test that began days ago is still live).
-            if (!m.live && !today.equals(localDate(gmt, ""))) continue;
-            m.start = m.live || m.ended ? null : localTime(gmt);
+            if (!m.live && !m.paused && !today.equals(localDate(gmt, ""))) continue;
+            m.start = m.live || m.paused || m.ended ? null : localTime(gmt);
             m.t1 = a[1];
             m.t2 = b[1];
             m.s1 = o.optString("t1s", "").trim();
@@ -436,7 +447,7 @@ final class Cricket {
             m.test = m.type.equals("TEST") || (m.type.isEmpty() && m.status.toLowerCase(Locale.ROOT).startsWith("day "));
             m.kind = m.test ? (intl ? "Test" : "First-class") : m.type.equals("ODI") ? (intl ? "ODI" : "One-day")
                     : m.type.equals("T20") ? (intl ? "T20I" : "T20") : "";
-            m.rank = (m.live ? 0 : m.ended ? 20 : 10) + (m.home ? 0 : 4) + (intl ? 0 : 2);
+            m.rank = (m.live ? 0 : m.paused ? 5 : m.ended ? 20 : 10) + (m.home ? 0 : 4) + (intl ? 0 : 2);
             out.add(m);
         }
         out.sort((x, y) -> Integer.compare(x.rank, y.rank));

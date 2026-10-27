@@ -446,6 +446,12 @@ public class HomeActivity extends Activity {
             } else {
                 b.append(m.league).append("  ·  ").append(result).append("  ·  ").append(m.status);
             }
+        } else if (m.paused) {
+            // "Test · AUS 329 v RSA · Day 1: Stumps": the scores, and why nobody's playing (before the " - " detail).
+            String why = m.status.contains(" - ") ? m.status.substring(0, m.status.indexOf(" - ")) : m.status;
+            if (!m.kind.isEmpty()) b.append(m.kind).append("  ·  ");
+            b.append(m.t1).append(m.s1.isEmpty() ? "" : " " + m.s1).append("  v  ").append(m.t2).append(m.s2.isEmpty() ? "" : " " + m.s2)
+                    .append("  ·  ").append(why);
         } else if (m.live) {
             b.append("● LIVE  ");
             b.setSpan(new ForegroundColorSpan(0xFFFF453A), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -647,8 +653,13 @@ public class HomeActivity extends Activity {
     /** The channel rows: Cricket and Football first while there are matches (Live scores), then your app channels. */
     private void showChannels(List<Channels.Channel> apps) {
         List<Channels.Channel> list = new ArrayList<>();
-        if (!cricketShown().isEmpty()) list.add(scoresRow("cricket", "Cricket", cricketShown()));
-        if (!footballShown().isEmpty()) list.add(scoresRow("football", "Football", footballShown()));
+        List<Cricket.Match> cricketRow = cricketShown(), footballRow = footballShown();
+        // The row with a match being played goes first: Football above Cricket while only football is live.
+        boolean footballFirst = !footballRow.isEmpty() && footballRow.get(0).live
+                && (cricketRow.isEmpty() || !cricketRow.get(0).live);
+        if (footballFirst) list.add(scoresRow("football", "Football", footballRow));
+        if (!cricketRow.isEmpty()) list.add(scoresRow("cricket", "Cricket", cricketRow));
+        if (!footballRow.isEmpty() && !footballFirst) list.add(scoresRow("football", "Football", footballRow));
         list.addAll(apps);
         {
             {

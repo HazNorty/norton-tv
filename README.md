@@ -276,6 +276,10 @@ While a match is live or on today, the line under the weather shows the most rel
 **Cricket** row appears at the top of the channel rows: each card has both teams' flags and scores, the match type and
 status ("LIVE · Test · Day 4: 3rd Session…"); the caption under it names the series.
 
+At stumps, lunch, tea or a rain delay nobody is playing, so a match isn't shown as live: the line reads
+"Test · AUS v RSA 329 · Day 1: Stumps", it's still checked every 15 minutes for play to resume, and a football match
+being played comes first (the Football row then sits above Cricket).
+
 - **Match type:** Test, ODI or T20I for internationals; First-class, One-day or T20 for domestic matches.
 - **Tests show every innings:** "425/9d & 84/1 (25)" and "99": all out shows the runs, a declaration adds "d", the
   innings in progress shows wickets and overs.
