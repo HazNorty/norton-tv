@@ -432,14 +432,17 @@ public class HomeActivity extends Activity {
         }
         SpannableStringBuilder b = new SpannableStringBuilder();
         if (m.football) {
+            // League first, like cricket's match type: "● LIVE  Serie A · 52' · SAS 2–4 LAZ".
+            String result = m.short1 + " " + m.s1 + "–" + m.s2 + " " + m.short2;
             if (m.live) {
                 b.append("● LIVE  ");
                 b.setSpan(new ForegroundColorSpan(0xFFFF453A), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                b.append(m.status).append("  ·  ").append(m.short1).append(" ").append(m.s1).append("–").append(m.s2).append(" ").append(m.short2);
+                b.append(m.league).append("  ·  ").append(m.status).append("  ·  ").append(result);
             } else if (!m.ended) {
-                b.append(m.short1).append(" v ").append(m.short2).append(m.start == null ? "" : "  ·  " + m.start).append("  ·  ").append(m.kind);
+                b.append(m.league).append("  ·  ").append(m.short1).append(" v ").append(m.short2)
+                        .append(m.start == null ? "" : "  ·  " + m.start);
             } else {
-                b.append(m.short1).append(" ").append(m.s1).append("–").append(m.s2).append(" ").append(m.short2).append("  ·  ").append(m.status);
+                b.append(m.league).append("  ·  ").append(result).append("  ·  ").append(m.status);
             }
         } else if (m.live) {
             b.append("● LIVE  ");

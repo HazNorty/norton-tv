@@ -48,14 +48,20 @@ final class Football {
     private static final long PAST_MS = 12 * 3600_000L, AHEAD_MS = 24 * 3600_000L;
     private static final int MAX = 12;
 
-    /** ESPN's league ids and the names shown in Control Center and on the cards, in menu order. */
+    /**
+     * ESPN's league ids, the names shown in Control Center and on the cards, and the short ones fans use, for the
+     * score line (10 characters at most), in menu order.
+     */
     static final String[][] LEAGUES = {
-            {"eng.1", "Premier League"}, {"uefa.champions", "Champions League"}, {"esp.1", "LaLiga"},
-            {"ger.1", "Bundesliga"}, {"ita.1", "Serie A"}, {"fra.1", "Ligue 1"}, {"uefa.europa", "Europa League"},
-            {"ind.1", "Indian Super League"}, {"usa.1", "MLS"}, {"ned.1", "Eredivisie"}, {"por.1", "Primeira Liga"},
-            {"sco.1", "Scottish Premiership"}, {"bra.1", "Brasileirão"}, {"arg.1", "Liga Profesional"},
-            {"mex.1", "Liga MX"}, {"ksa.1", "Saudi Pro League"}, {"aus.1", "A-League"}, {"jpn.1", "J1 League"},
-            {"eng.fa", "FA Cup"}, {"fifa.world", "World Cup"}, {"uefa.euro", "Euro"}};
+            {"eng.1", "Premier League", "EPL"}, {"uefa.champions", "Champions League", "UCL"},
+            {"esp.1", "LaLiga", "LaLiga"}, {"ger.1", "Bundesliga", "Bundesliga"}, {"ita.1", "Serie A", "Serie A"},
+            {"fra.1", "Ligue 1", "Ligue 1"}, {"uefa.europa", "Europa League", "UEL"},
+            {"ind.1", "Indian Super League", "ISL"}, {"usa.1", "MLS", "MLS"}, {"ned.1", "Eredivisie", "Eredivisie"},
+            {"por.1", "Primeira Liga", "Primeira"}, {"sco.1", "Scottish Premiership", "SPFL"},
+            {"bra.1", "Brasileirão", "Brazil"}, {"arg.1", "Liga Profesional", "Argentina"},
+            {"mex.1", "Liga MX", "Liga MX"}, {"ksa.1", "Saudi Pro League", "Saudi Pro"}, {"aus.1", "A-League", "A-League"},
+            {"jpn.1", "J1 League", "J1"}, {"eng.fa", "FA Cup", "FA Cup"}, {"fifa.world", "World Cup", "World Cup"},
+            {"uefa.euro", "Euro", "Euro"}};
     /** Each country's default leagues (the World Cup and the Euros join everywhere: they only have matches when on). */
     private static final Map<String, String[]> DEFAULTS = new HashMap<>();
     static {
@@ -98,6 +104,11 @@ final class Football {
 
     static String leagueName(String id) {
         for (String[] l : LEAGUES) if (l[0].equals(id)) return l[1];
+        return id;
+    }
+
+    static String leagueShort(String id) {
+        for (String[] l : LEAGUES) if (l[0].equals(id)) return l[2];
         return id;
     }
 
@@ -308,6 +319,7 @@ final class Football {
         m.live = o.optBoolean("live");
         m.ended = o.optBoolean("ended");
         m.kind = leagueName(o.optString("league"));
+        m.league = leagueShort(o.optString("league"));
         m.t1 = o.optString("t1");
         m.t2 = o.optString("t2");
         m.short1 = o.optString("a1");
