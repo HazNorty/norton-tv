@@ -120,6 +120,8 @@ public class HomeActivity extends Activity {
     /** When a remote key last moved focus, and whether a channel update is waiting for the remote to go still. */
     private long lastKeyAt;
     private boolean chanPending;
+    /** The icon Talkies settings drops down from (Control Center, or the gear when you held OK on it). */
+    private int settingsAt = P_CONTROL;
     private static final long CHAN_IDLE_MS = 4000;   // each channel row's scroll, in px
     // The Channels editor (Control Center → Channels).
     private int menuMode = MENU_PLAIN;
@@ -1431,7 +1433,7 @@ public class HomeActivity extends Activity {
         if (!select && !nav && !back) return super.dispatchKeyEvent(e);
         lastKeyAt = android.os.SystemClock.uptimeMillis();
         boolean onApp = zone == Z_DOCK || zone == Z_GRID || (zone == Z_MENU && menuMode == MENU_CHANNELS)
-                || continueCard() != null;
+                || continueCard() != null || (zone == Z_TOP && iconIdx == P_SETTINGS);
         // Holding OK on an app opens its menu, on a Continue card the card's menu, and in the Channels editor
         // picks the row up (a timer, or the remote's long-press signal, whichever comes first).
         if (select && e.getAction() == KeyEvent.ACTION_DOWN) {
@@ -1887,7 +1889,7 @@ public class HomeActivity extends Activity {
 
     /** One row per league, On when it's shown; OK turns it on or off. Leaving the menu fetches the new set. */
     private void openFootballLeagues(int focus) {
-        beginMenu(P_CONTROL, football.customLeagues() ? "Football leagues"
+        beginMenu(settingsAt, football.customLeagues() ? "Football leagues"
                 : "Football leagues  ·  defaults for " + Region.name(Region.country(this)));
         List<String> on = football.leagues();
         for (String[] l : Football.LEAGUES) {
@@ -1908,7 +1910,7 @@ public class HomeActivity extends Activity {
                 List<Cricket.Match> saved = football.cached();
                 runOnUiThread(() -> { onFootball(saved); refreshOnline(); });
             });
-            focusTop(P_CONTROL);
+            focusTop(settingsAt);
         };
         showMenu(360);
         focusMenu(focus);
@@ -1922,7 +1924,7 @@ public class HomeActivity extends Activity {
      * They go in the same files the set-*.sh scripts push over adb (see Keys).
      */
     private void openKeysAndLocation(int focus) {
-        beginMenu(P_CONTROL, "Keys and location");
+        beginMenu(settingsAt, "Keys and location");
         String tmdb = Keys.read(this, Keys.TMDB), cricket = Keys.read(this, Keys.CRICKET), area = Keys.read(this, Keys.LOCATION);
         String paste = "\n\nTip: the Google TV app on your phone has a keyboard that can paste it.";
         addRow("TMDB key", tmdb == null ? "Not set" : Keys.masked(tmdb), () -> askText("TMDB key",
@@ -2017,7 +2019,7 @@ public class HomeActivity extends Activity {
 
     /** One row per button with a job ("Prog Red → Open JioHotstar"), then Add a key. */
     private void openRemoteKeys() {
-        beginMenu(P_CONTROL, "Remote keys");
+        beginMenu(settingsAt, "Remote keys");
         for (Map.Entry<Integer, String> e : RemoteKeys.all(this).entrySet()) {
             int code = e.getKey();
             addRow(RemoteKeys.keyName(code), RemoteKeys.describe(this, e.getValue()), () -> openKeyActions(code), false);
@@ -2029,9 +2031,9 @@ public class HomeActivity extends Activity {
     /** Waits for the next remote button (through the accessibility service, so the TV doesn't act on it). */
     private void learnKey() {
         if (!SleepService.isRunning()) { needsTurnOffSetup(); return; }
-        beginMenu(P_CONTROL, "Press the button on your remote");
+        beginMenu(settingsAt, "Press the button on your remote");
         addRow("Waiting for a button…", "Back cancels", () -> { }, true);
-        menuClosed = () -> { SleepService.learn(null); focusTop(P_CONTROL); };
+        menuClosed = () -> { SleepService.learn(null); focusTop(settingsAt); };
         showMenu(360);
         SleepService.learn(code -> {
             if (zone == Z_MENU) openKeyActions(code);
@@ -2041,7 +2043,7 @@ public class HomeActivity extends Activity {
     /** What the button does: an app, Inputs, Talkies, nothing, or its normal job. */
     private void openKeyActions(int code) {
         menuClosed = null;
-        beginMenu(P_CONTROL, RemoteKeys.keyName(code) + "  ·  now: " + RemoteKeys.describe(this, RemoteKeys.action(this, code)));
+        beginMenu(settingsAt, RemoteKeys.keyName(code) + "  ·  now: " + RemoteKeys.describe(this, RemoteKeys.action(this, code)));
         addRow("Open an app", null, () -> openKeyApps(code), false);
         addRow("Inputs", null, () -> setKey(code, RemoteKeys.INPUTS), false);
         addRow("Talkies", null, () -> setKey(code, RemoteKeys.HOME), false);
@@ -2051,7 +2053,7 @@ public class HomeActivity extends Activity {
     }
 
     private void openKeyApps(int code) {
-        beginMenu(P_CONTROL, "Open which app?");
+        beginMenu(settingsAt, "Open which app?");
         for (AppEntry a : apps) addRow(a.label, null, () -> setKey(code, RemoteKeys.APP + a.pkg), false);
         showMenu(360);
     }
@@ -2090,7 +2092,7 @@ public class HomeActivity extends Activity {
     }
 
     private void openNetworkDebugging() {
-        beginMenu(P_CONTROL, "Network debugging lets a computer on your network control this TV");
+        beginMenu(settingsAt, "Network debugging lets a computer on your network control this TV");
         boolean on = Settings.Global.getInt(getContentResolver(), Settings.Global.ADB_ENABLED, 0) != 0;
         if (on && ServiceRepair.canRepair(this)) {
             addRow("Turn off", "computers lose access", () -> {
@@ -2114,6 +2116,7 @@ public class HomeActivity extends Activity {
         if (zone == Z_MENU) { startMove(); return; }  // the Channels editor: pick the row up
         holdFired = true;
         if (zone == Z_DOCK || zone == Z_GRID) openAppMenu();
+        else if (zone == Z_TOP && iconIdx == P_SETTINGS) openTalkiesSettings(P_SETTINGS);
         else if (continueCard() != null) openContinueMenu();
     }
 
@@ -2293,6 +2296,17 @@ public class HomeActivity extends Activity {
         }, false);
         addRow("Screensaver", null, () -> start(new Intent(Intent.ACTION_MAIN)
                 .setClassName("com.android.systemui", "com.android.systemui.Somnambulator")), false);
+        addRow("Talkies settings", null, () -> openTalkiesSettings(P_CONTROL), false);
+        showMenu(350);
+    }
+
+    /**
+     * Talkies settings: what you set once and rarely change (Control Center keeps what you reach for while watching).
+     * From Control Center's last row, or by holding OK on the gear (a press opens the TV's own settings).
+     */
+    private void openTalkiesSettings(int anchor) {
+        settingsAt = anchor;
+        beginMenu(anchor, "Talkies settings");
         final View[] look = new View[1];
         look[0] = addRow("Appearance", APPEARANCE[prefs.getInt("appearance", 0)], () -> {
             int mode = (prefs.getInt("appearance", 0) + 1) % APPEARANCE.length;
@@ -2352,11 +2366,12 @@ public class HomeActivity extends Activity {
 
     /** Credits for the data Talkies shows; TMDB's wording is what its terms ask for. */
     private void openAbout() {
-        beginMenu(P_CONTROL, "Talkies · MIT License");
+        beginMenu(settingsAt, "Talkies · MIT License");
         String[][] credits = {
                 {"Weather", "Open-Meteo.com (CC BY 4.0)"},
                 {"Airport temperatures", "aviationweather.gov (NOAA)"},
                 {"Cricket scores", "CricketData.org"},
+                {"Football scores", "ESPN (public scoreboard)"},
                 {"Speed test", "Cloudflare"},
                 {"Code from", "tv-vibehack/CleanYourTV, Free My TV, Matinee"},
                 {"Font", "Outfit (SIL OFL)"},
@@ -2391,7 +2406,7 @@ public class HomeActivity extends Activity {
     }
 
     private void fillChannelsMenu() {
-        beginMenu(P_CONTROL, "Channels  ·  OK: show or hide  ·  hold OK: move");
+        beginMenu(settingsAt, "Channels  ·  OK: show or hide  ·  hold OK: move");
         menuMode = MENU_CHANNELS;
         for (Channels.Channel ch : editList) {
             final Channels.Channel c = ch;

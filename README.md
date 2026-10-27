@@ -23,7 +23,7 @@ too, use [CleanYourTV](https://github.com/Gathin23/cleanyourtv) first; Talkies w
 - **Cricket**: a live score under the icons and a Cricket row above the channels, for international matches and
   your country's domestic competitions (optional, needs a free CricketData.org key)
 - **Football**: live scores from the leagues you pick (Premier League, Champions League, LaLiga, MLS, Indian Super
-  League and more; your country's by default), with no key needed. Control Center → **Live scores** shows cricket,
+  League and more; your country's by default), with no key needed. Talkies settings → **Live scores** shows cricket,
   football, both or neither
 - Every other app under **All apps**, after the channels
 - A background that glows in the colour of the focused item's app (Netflix red, Prime Video blue…: the dock or
@@ -31,7 +31,7 @@ too, use [CleanYourTV](https://github.com/Gathin23/cleanyourtv) first; Talkies w
   is spring-driven like Free My TV: the focused item grows, the page and rows glide, and quick or held presses keep
   their speed instead of restarting. The background is drawn as one layer, which keeps it at 60 fps on this TV
 - **Appearance:** Auto follows today's sunrise and sunset at your location (6:00–18:30 until known); Light or Dark
-  can be fixed in Control Center
+  can be fixed in Talkies settings
 
 No ads and no video; the glow's colour comes from the app's banner, and the background is one small image stretched to the screen.
 Network use: the picks (at most every 6 hours), the weather (at most every 30 minutes) and cricket (every 15 minutes
@@ -40,14 +40,14 @@ app, under the screensaver or in standby. Coming back to the home screen fetches
 
 | | |
 |---|---|
-| ![The Inputs menu: HDMI 1 to 3 with the connected device's name and standby state, AV and Live TV](docs/inputs.jpg) | ![Control Center: sleep timer, turn off, free memory, network, speed test, sound output, screensaver, appearance](docs/control-center.jpg) |
+| ![The Inputs menu: HDMI 1 to 3 with the connected device's name and standby state, AV and Live TV](docs/inputs.jpg) | ![Control Center: sleep timer, turn off now, free up memory, network, speed test, sound output, screensaver and Talkies settings](docs/control-center.jpg) |
 | *Inputs, with HDMI-CEC device names* | *Control Center* |
 | ![Hold OK on Prime Video in the dock: a Move and App info menu, the background glowing blue](docs/hold-menu.jpg) | ![The Cricket row below the dock: India v New Zealand and Ireland v Namibia scorecards with results](docs/cricket.jpg) |
 | *Hold OK on an app; the glow follows its colour* | *The Cricket row below the dock* |
 | ![The light look by day: Breaking Bad focused in Trending, a soft pink glow from Netflix](docs/home-light.jpg) | ![The Inputs menu in the light look](docs/inputs-light.jpg) |
 | *Light by day (Appearance: Auto follows sunrise and sunset)* | *Inputs in the light look* |
 | ![For You hidden, dark: a larger weather, clock and date over a blue glow from Prime Video, and the dock](docs/minimal-dark.jpg) | ![For You hidden, light: a larger weather, clock and date over a soft red glow from Netflix, and the dock](docs/minimal-light.jpg) |
-| *For You hidden (Control Center → For You): a larger clock, dark* | *For You hidden, light* |
+| *For You hidden (Talkies settings → For You): a larger clock, dark* | *For You hidden, light* |
 
 ## First-time setup
 
@@ -99,11 +99,11 @@ Gradle, so it takes a few minutes.
    - Cricket: a free [CricketData.org](https://cricketdata.org) key
    - Weather: your area (`"Camden, London"`) or `"lat,lon"`
 
-   Enter all three on the TV in Control Center → **Keys and location** (each key is checked before it's saved; the
+   Enter all three on the TV in Talkies settings → **Keys and location** (each key is checked before it's saved; the
    Google TV app on your phone has a keyboard that can paste them), or from the computer with `./set-tmdb-key.sh`,
    `./set-cricket-key.sh` and `./set-location.sh "your area"`.
    - Accessibility restored after a force stop: the `pm grant` under *Google Assistant and the Google TV launcher*
-   - Sharp YouTube pictures: Control Center → **Sharp YouTube pictures** (off by default; see *Continue*)
+   - Sharp YouTube pictures: Talkies settings → **Sharp YouTube pictures** (off by default; see *Continue*)
 
 Keys are stored on the TV and in git-ignored files next to the scripts, your location only on the TV; neither is in the app or the
 repository. `./restore.sh` puts the TV back the way it was.
@@ -223,7 +223,7 @@ It combines two sources:
   and for apps whose Watch Next is behind: JioHotstar doesn't always update it, so a title it played more recently
   than its newest Watch Next entry shows too. Watch Next is reread whenever an app changes it (Netflix updates it a
   few seconds after you leave), and the Watch Next channel row shows this same list.
-  Pictures: YouTube shares only a 640-pixel picture while playing (no video ID). With Control Center → **Sharp
+  Pictures: YouTube shares only a 640-pixel picture while playing (no video ID). With Talkies settings → **Sharp
   YouTube pictures** on (it's off by default), Talkies looks the video up on YouTube by title and channel,
   confirms it through YouTube's public oEmbed endpoint, and swaps in the 1280 × 720 thumbnail (only the title and
   channel are sent; once per video, while the home screen is in front). This reads YouTube's search page, which
@@ -259,7 +259,7 @@ Rows below the dock, read from the channels your apps publish to Android TV (the
 opens that title in its app (for example a JioHotstar card opens that film's page). Rows refresh whenever the home
 screen opens.
 
-**Choose channels:** Control Center → **Channels** lists every channel your apps publish.
+**Choose channels:** Talkies settings → **Channels** lists every channel your apps publish.
 
 - **OK** shows or hides a channel.
 - **Hold OK**, then **Up/Down**, moves it; **OK** places it, **Back** cancels. The first shown channel is the top row.
@@ -318,7 +318,7 @@ Football works like cricket, with no key: the line under the weather shows the m
 the score and the minute ("LIVE · Premier League · 67'"), kick-off time ("starts Wed 7:30 pm") or result.
 
 - **Which matches:** live now, starting within a day, or finished in the last 12 hours, from your leagues.
-- **Your leagues:** Control Center → **Football leagues**. Each country starts with its own (India: Premier League,
+- **Your leagues:** Talkies settings → **Football leagues**. Each country starts with its own (India: Premier League,
   Champions League and Indian Super League; the UK: Premier League, Champions League and the Scottish Premiership;
   the US: MLS, Premier League and Champions League…), plus the World Cup and the Euros when they're on. Press OK to
   turn one on or off; **Back to the defaults** undoes your changes.
@@ -329,7 +329,8 @@ the score and the minute ("LIVE · Premier League · 67'"), kick-off time ("star
 
 ## Control Center
 
-Go up to the icon buttons and choose the first one (sliders).
+Go up to the icon buttons and choose the first one (sliders). It has what you reach for while watching; everything
+you set once is in **Talkies settings**, its last row.
 
 | Row | What OK does |
 |---|---|
@@ -340,17 +341,25 @@ Go up to the icon buttons and choose the first one (sliders).
 | Speed test | A few seconds' download from Cloudflare's speed test; shows e.g. "206 Mbps" |
 | Sound output | Shows TV speakers or Soundbar (HDMI ARC) and opens the TV's Sound settings |
 | Screensaver | Starts the TV's screensaver right away |
+| Talkies settings | Opens Talkies settings (below) |
+
+## Talkies settings
+
+Control Center → **Talkies settings**, or **hold OK on the ⚙ icon** (a press still opens the TV's own settings).
+
+| Row | What OK does |
+|---|---|
 | Appearance | Cycles Auto (light by day, dark at night) → Light → Dark |
-| For You | Shown or Hidden. Hidden removes the tabs and picks (the weather, time and date stay), Up from the dock goes to the icons, and TMDB picks aren't fetched |
-| Channels | Choose which app channels show below the dock, and their order |
+| For You | Shown or Hidden. Hidden removes the tabs and picks (the weather, time and date stay, larger), Up from the dock goes to the icons, and TMDB picks aren't fetched |
 | Live scores | Cricket and football (default), Cricket, Football or Off: what the score line and the score rows show |
 | Football leagues | The leagues the Football row follows; see *Football* |
+| Channels | Choose which app channels show below the dock, and their order |
 | Remote keys | Give a remote button another job: open an app, Inputs, Talkies, or nothing. **Add a key**, press the button, choose. Navigation, OK, Back, Home, volume and power can't be changed |
 | Keys and location | Your TMDB key (picks), CricketData key (scores) and weather area. Type or paste each one; keys are tried with the service first and only saved if it accepts them. **Remove** clears one |
 | Network debugging | "On · port 5555" while computers on your network can control the TV over ADB (how Talkies was installed). **Turn off** (needs the permission below) or open Developer options; turning it on again is done in Developer options |
+| Home app | Shows the current home screen and opens Android's *Default home app* chooser (Talkies or Projectivy) |
 | Sharp YouTube pictures | Off by default. On: YouTube cards in Continue get YouTube's 1280-pixel thumbnails, looked up by title and channel |
 | About | Credits for the data and code Talkies uses |
-| Home app | Shows the current home screen and opens Android's *Default home app* chooser (Talkies or Projectivy) |
 
 **One-time setup for Turn off now, the sleep timer and cricket search:** this TV has no "device admin" support, so the
 launcher turns the TV off through a small accessibility service. The same service types a match into JioHotstar's
@@ -360,8 +369,8 @@ Talkies**. Until then, choosing Turn off or the sleep timer takes you to that sc
 
 ## Switch between Talkies and Projectivy
 
-- **On the TV, to Projectivy:** Control Center → **Home app** → **Projectivy Launcher**, then press Home.
-- **On the TV, back to Talkies:** in Projectivy, open the **Talkies** app, then Control Center → **Home app** → **Talkies**.
+- **On the TV, to Projectivy:** Talkies settings → **Home app** → **Projectivy Launcher**, then press Home.
+- **On the TV, back to Talkies:** in Projectivy, open the **Talkies** app, then Talkies settings → **Home app** → **Talkies**.
 - **From the Mac:**
 
   ```bash
@@ -490,7 +499,7 @@ adb -s "$TALKIES_TV" shell pm grant com.techpp.glass android.permission.WRITE_SE
 
 Then, if a force stop switches the service off, Talkies switches it back on the next time it starts (you open it
 from Google TV's apps, the TV restarts, or it's updated). It only does that if the service was on when it was killed;
-if you switch it off yourself, it stays off. The same permission lets Control Center → Network debugging turn
+if you switch it off yourself, it stays off. The same permission lets Talkies settings → Network debugging turn
 debugging off. It's a powerful permission (an app holding it can change system settings), so it's your call;
 `adb shell pm revoke com.techpp.glass android.permission.WRITE_SECURE_SETTINGS` takes it back.
 
@@ -534,7 +543,7 @@ Network debugging lets any device on your Wi-Fi that you've allowed control the 
 all. Talkies doesn't need it once it's installed: only to update it or change keys from a computer.
 
 1. On the TV: Developer options → **USB debugging** and **Network debugging** off, and **Revoke USB debugging
-   authorisations**. Or Control Center → **Network debugging** in Talkies, which shows whether it's on.
+   authorisations**. Or Talkies settings → **Network debugging** in Talkies, which shows whether it's on.
 2. From your computer, `nc -vz 192.168.1.20 5555` should now say **Connection refused**. ("No route to host" on a
    Mac can be Local Network privacy, not a closed port.)
 
@@ -555,7 +564,7 @@ Without a computer: Settings → Apps → Talkies → Uninstall, and the TV's ow
 
 ## Credits
 
-Data (also listed in the app, Control Center → About):
+Data (also listed in the app, Talkies settings → About):
 
 - **Picks:** [TMDB](https://www.themoviedb.org). *This application uses TMDB and the TMDB APIs but is not endorsed,
   certified, or otherwise approved by TMDB.* You use your own free API key, under TMDB's [terms of use](https://www.themoviedb.org/api-terms-of-use).
