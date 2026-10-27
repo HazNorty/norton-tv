@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Norton TV: everything Norton TV fetches from the internet is HTTPS. Plain HTTP is allowed only so the Lights
+     row can reach the Hue Bridge on the home network (its local API, as the Hue apps use it); Watch Next artwork
+     that apps publish over HTTP also loads. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

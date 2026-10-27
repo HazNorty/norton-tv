@@ -135,6 +135,8 @@ public class HomeActivity extends Activity {
     private Football football;
     private Calendars calendars;
     private Cricket.Match teamMatch;  // Arsenal's next match from their fixture list (Football.teamNext)
+    private Hue hue;
+    private List<Hue.Light> hueLights = new ArrayList<>();
     private List<Calendars.Event> calendarEvents = new ArrayList<>();
     private List<Cricket.Match> matches = new ArrayList<>(), footballMatches = new ArrayList<>();
     private List<Channels.Channel> appChannels = new ArrayList<>();  // the shown app channels, without Cricket
@@ -264,6 +266,7 @@ public class HomeActivity extends Activity {
         cricket = new Cricket(this);
         football = new Football(this);
         calendars = new Calendars(this);
+        hue = new Hue(this);
         score = findViewById(R.id.score);
         weatherLine = weather.cached();
         day = isDayNow();
@@ -738,6 +741,7 @@ public class HomeActivity extends Activity {
         List<Channels.Channel> list = new ArrayList<>();
         List<Cricket.Match> cricketRow = cricketShown(), footballRow = footballShown();
         if (calendars.configured()) list.add(todayRow());  // Norton TV: the calendars come first, under the dock
+        if (hue.linked() || hue.found()) list.add(lightsRow());  // then the Hue bulbs
         // The row with a match being played goes first: Football above Cricket while only football is live.
         boolean footballFirst = !footballRow.isEmpty() && footballRow.get(0).live
                 && (cricketRow.isEmpty() || !cricketRow.get(0).live);
@@ -788,6 +792,7 @@ public class HomeActivity extends Activity {
     /** What a card shows, unchanged by a new score: the match, or the pick itself. */
     private static String cardKey(Trending.Pick p) {
         if (p.extra instanceof Calendars.Event) return ((Calendars.Event) p.extra).id();
+        if ("light".equals(p.kind)) return "light:" + p.id;
         return p.extra instanceof Cricket.Match ? ((Cricket.Match) p.extra).id : String.valueOf(p.id);
     }
 
@@ -957,6 +962,103 @@ public class HomeActivity extends Activity {
         return c;
     }
 
+    /** The card that links Norton TV to the Hue Bridge (its Pick's extra), until it's linked. */
+    private static final String HUE_LINK = "hue-link";
+
+    /** Norton TV's Lights row: a card per Hue bulb (OK switches it), or the card that links the bridge. */
+    private Channels.Channel lightsRow() {
+        Channels.Channel c = new Channels.Channel();
+        c.key = "lights";
+        c.name = "Lights";
+        if (!hue.linked()) {
+            Trending.Pick p = new Trending.Pick();
+            p.kind = "light";
+            p.extra = HUE_LINK;
+            p.id = hue.linking() ? 2 : 1;
+            p.title = hue.linking() ? "Press the bridge button" : "Link your Hue lights";
+            p.meta = hue.linking() ? "The round button on top of the Hue Bridge" : "Press OK, then the button on the Hue Bridge";
+            c.items.add(p);
+            c.title = "Lights";
+            return c;
+        }
+        int on = 0;
+        for (Hue.Light l : hueLights) {
+            Trending.Pick p = new Trending.Pick();
+            p.kind = "light";
+            p.extra = l;
+            // The id changes with the bulb's state, so the row redraws when a light goes on or off.
+            p.id = (l.id + ":" + l.on + ":" + l.bri + ":" + l.reachable).hashCode();
+            p.title = l.name;
+            p.meta = l.status();
+            c.items.add(p);
+            if (l.on && l.reachable) on++;
+        }
+        c.title = hueLights.isEmpty() ? "Lights" : on == 0 ? "Lights  ·  all off" : "Lights  ·  " + on + " on";
+        return c;
+    }
+
+    private void onLights(List<Hue.Light> list) {
+        hueLights = list;
+        showChannels(appChannels);  // while you're moving through the rows it waits for the remote to go still
+    }
+
+    /** OK on a Lights card: switch the bulb, or start linking the bridge. */
+    private void openLight(Trending.Pick p) {
+        if (p.extra instanceof Hue.Light) {
+            hue.toggle((Hue.Light) p.extra, this::onLights);
+            return;
+        }
+        Toast.makeText(this, "Press the round button on your Hue Bridge now", Toast.LENGTH_LONG).show();
+        hue.link(ok -> {
+            Toast.makeText(this, ok ? "Hue lights linked" : "The bridge button wasn't pressed in time. Try again",
+                    Toast.LENGTH_LONG).show();
+            chanSignature = "";
+            refreshOnline();
+            showChannels(appChannels);
+        });
+        chanSignature = "";
+        showChannels(appChannels);
+    }
+
+    /** A bulb card: warm and bright when the light is on, quiet when it's off, with its name and state. */
+    private View lightCard(Trending.Pick p) {
+        Hue.Light l = p.extra instanceof Hue.Light ? (Hue.Light) p.extra : null;
+        boolean lit = l != null && l.on && l.reachable;
+        FrameLayout card = new FrameLayout(this);
+        // Warm white light: a soft amber wash whose strength follows the brightness.
+        int warm = blend(0xFFFFB648, theme.tileBg, lit ? 0.35f + 0.4f * (1f - l.bri / 254f) : 1f);
+        card.setBackground(rounded(lit ? warm : theme.tileBg, 0, 10));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(px(16), px(12), px(12), px(10));
+        TextView dot = new TextView(this);
+        dot.setText(l == null ? "◎" : lit ? "●" : "○");
+        dot.setTextSize(13);
+        dot.setTextColor(lit ? 0xFFFFD27A : theme.text2);
+        col.addView(dot);
+        TextView name = new TextView(this);
+        name.setText(p.title);
+        name.setTextColor(lit ? 0xFF2B1B05 : theme.text);
+        name.setTextSize(15);
+        name.setTypeface(getResources().getFont(R.font.outfit));
+        name.setFontVariationSettings("'wght' 500");
+        name.setMaxLines(2);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        nl.topMargin = px(2);
+        col.addView(name, nl);
+        TextView st = new TextView(this);
+        st.setText(p.meta);
+        st.setTextColor(lit ? 0xFF5A3A0C : theme.text2);
+        st.setTextSize(11.5f);
+        st.setTypeface(getResources().getFont(R.font.outfit));
+        st.setSingleLine(true);
+        col.addView(st);
+        card.addView(col, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        card.setContentDescription(p.title + ". " + p.meta);
+        return card;
+    }
+
     /** "All day", "14:30" or "14:30 – 15:30" (12-hour when the TV is set that way). */
     private String eventTime(Calendars.Event e) {
         if (e.allDay) return "All day";
@@ -1019,6 +1121,7 @@ public class HomeActivity extends Activity {
     private View channelCard(Trending.Pick p) {
         if (p.extra instanceof Cricket.Match) return cricketCard((Cricket.Match) p.extra);
         if ("today".equals(p.kind)) return calendarCard(p);
+        if ("light".equals(p.kind)) return lightCard(p);
         FrameLayout card = new FrameLayout(this);
         card.setBackground(rounded(theme.tileBg, 0, 10));
         final float r = px(10);
@@ -1746,6 +1849,7 @@ public class HomeActivity extends Activity {
 
     /** Opens a pick or channel card: through the app's own link to that title when it gave one, else the app. */
     private void openPick(Trending.Pick p) {
+        if ("light".equals(p.kind)) { openLight(p); return; }
         if (p.intentUri != null) {
             try {
                 startActivity(Intent.parseUri(p.intentUri, Intent.URI_INTENT_SCHEME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -3140,6 +3244,7 @@ public class HomeActivity extends Activity {
             football.refreshIfStale(this::onFootball);
         }
         calendars.refreshIfStale(this::onCalendar);
+        hue.refreshIfStale(this::onLights);
         weather.refreshIfStale(this::onWeather);
         if (forYou) trending.refreshIfStale(this::onPicks);
         if (prefs.getBoolean("youtube_art", false)) RecentStore.upgradeArtwork(this, () -> {
