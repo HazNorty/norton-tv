@@ -116,7 +116,11 @@ public class HomeActivity extends Activity {
     private int chanIdx;
     private String chanSignature = "";
     private final List<Spring> chanSprings = new ArrayList<>();
-    private boolean refocusChannels;   // each channel row's scroll, in px
+    private boolean refocusChannels;
+    /** When a remote key last moved focus, and whether a channel update is waiting for the remote to go still. */
+    private long lastKeyAt;
+    private boolean chanPending;
+    private static final long CHAN_IDLE_MS = 4000;   // each channel row's scroll, in px
     // The Channels editor (Control Center → Channels).
     private int menuMode = MENU_PLAIN;
     private List<Channels.Channel> editList, beforeEdit;
@@ -456,13 +460,13 @@ public class HomeActivity extends Activity {
     private void onMatches(List<Cricket.Match> list) {
         matches = list;
         updateScore();
-        if (zone != Z_CHAN) showChannels(appChannels);
+        showChannels(appChannels);  // while you're moving through the rows it waits for the remote to go still
     }
 
     private void onFootball(List<Cricket.Match> list) {
         footballMatches = list;
         updateScore();
-        if (zone != Z_CHAN) showChannels(appChannels);
+        showChannels(appChannels);  // while you're moving through the rows it waits for the remote to go still
     }
 
     private void onMinute() {
@@ -649,17 +653,41 @@ public class HomeActivity extends Activity {
                     for (Trending.Pick p : ch.items) sig.append(p.id).append(',');
                 }
                 if (sig.toString().equals(chanSignature)) return;
-                if (zone == Z_CHAN && !refocusChannels) return;  // not while you're moving through them; next time
+                boolean inRows = zone == Z_CHAN;
+                if (inRows && !refocusChannels && android.os.SystemClock.uptimeMillis() - lastKeyAt < CHAN_IDLE_MS) {
+                    // You're moving through the rows: don't shift them under you. Try again once the remote is still.
+                    if (!chanPending) {
+                        chanPending = true;
+                        root.postDelayed(() -> { chanPending = false; showChannels(appChannels); }, CHAN_IDLE_MS);
+                    }
+                    return;
+                }
+                // Focus is in the rows (resting there, or a Watch Next card was just removed): stay on the same row
+                // and card after the rebuild, found by what they are, since a score update can reorder them.
+                String atRow = inRows && chanIdx < chanRows.size() ? chanRows.get(chanIdx).key : null;
+                String atCard = null;
+                if (atRow != null) {
+                    List<Trending.Pick> items = chanRows.get(chanIdx).items;
+                    if (chanCol[chanIdx] < items.size()) atCard = cardKey(items.get(chanCol[chanIdx]));
+                }
                 chanSignature = sig.toString();
                 buildChannelRows(list);
-                if (refocusChannels && zone == Z_CHAN && !chanRows.isEmpty()) {
-                    // A card was just removed from the Watch Next row: stay where it was.
+                if (inRows && !chanRows.isEmpty()) {
                     int r = Math.min(chanIdx, chanRows.size() - 1);
-                    focusChan(r, Math.min(chanCol[r], chanRows.get(r).items.size() - 1));
+                    for (int i = 0; i < chanRows.size(); i++) if (chanRows.get(i).key.equals(atRow)) r = i;
+                    List<Trending.Pick> items = chanRows.get(r).items;
+                    int c = Math.min(chanCol[r], items.size() - 1);
+                    for (int j = 0; j < items.size(); j++) if (cardKey(items.get(j)).equals(atCard)) c = j;
+                    focusChan(r, c);
                 }
                 refocusChannels = false;
             }
         }
+    }
+
+    /** What a card shows, unchanged by a new score: the match, or the pick itself. */
+    private static String cardKey(Trending.Pick p) {
+        return p.extra instanceof Cricket.Match ? ((Cricket.Match) p.extra).id : String.valueOf(p.id);
     }
 
     private Channels.Channel scoresRow(String key, String title, List<Cricket.Match> list) {
@@ -1398,6 +1426,7 @@ public class HomeActivity extends Activity {
                 || k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT;
         boolean back = k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_ESCAPE;
         if (!select && !nav && !back) return super.dispatchKeyEvent(e);
+        lastKeyAt = android.os.SystemClock.uptimeMillis();
         boolean onApp = zone == Z_DOCK || zone == Z_GRID || (zone == Z_MENU && menuMode == MENU_CHANNELS)
                 || continueCard() != null;
         // Holding OK on an app opens its menu, on a Continue card the card's menu, and in the Channels editor

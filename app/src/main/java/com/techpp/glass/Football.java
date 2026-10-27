@@ -38,13 +38,13 @@ import java.util.concurrent.Executors;
  * API, so it may change without notice; if it fails, the Football row just stays away. Leagues: the ones you chose in
  * Control Center → Football leagues, else a default set for the TV's country (Region). Shows matches live now,
  * starting in the next day, or finished in the last 12 hours. Asks every 15 minutes, and every minute for the
- * leagues with a match on, only while the home screen is showing. The matches reuse Cricket.Match, so the score line,
+ * leagues with a match on (at least 30 s apart, so every minute tick of the home screen gets one), only while the home screen is showing. The matches reuse Cricket.Match, so the score line,
  * row and cards are drawn the same way.
  */
 final class Football {
     private static final String TAG = "GlassFootball";
     private static final String API = "https://site.api.espn.com/apis/site/v2/sports/soccer/";
-    private static final long FULL_MS = 15 * 60_000L, LIVE_MS = 60_000L, RETRY_MS = 5 * 60_000L;
+    private static final long FULL_MS = 15 * 60_000L, LIVE_MS = 30_000L, RETRY_MS = 5 * 60_000L;
     private static final long PAST_MS = 12 * 3600_000L, AHEAD_MS = 24 * 3600_000L;
     private static final int MAX = 12;
 
