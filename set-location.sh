@@ -9,7 +9,7 @@ set -euo pipefail
 AREA="${1:?Usage: $0 \"place\" | lat,lon | --remove [tv-ip:port]}"
 . "$(dirname "$0")/tv-address.sh"
 DEV="${2:-$(tv_default)}"; need_tv
-F=/sdcard/Android/data/com.techpp.glass/files/location.txt
+F=/sdcard/Android/data/com.haznorty.nortontv/files/location.txt
 adb connect "$DEV" >/dev/null 2>&1 || true
 if [ "$AREA" = "--remove" ]; then
   adb -s "$DEV" shell -n rm -f "$F"
