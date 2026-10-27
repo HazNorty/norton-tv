@@ -88,6 +88,8 @@ public class SleepService extends AccessibilityService {
         int code = event.getKeyCode();
         boolean up = event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled();
         if (code == KeyEvent.KEYCODE_HOME) {
+            // You chose a launcher you installed yourself (Projectivy…) as the home app: Home is its, not ours.
+            if (otherLauncherChosen()) return false;
             if (up) openHome();
             return true;
         }
@@ -221,6 +223,19 @@ public class SleepService extends AccessibilityService {
             setServiceInfo(info);
         }
         Log.i(TAG, "Built-in home screens: " + stockHomes);
+    }
+
+    /**
+     * Whether the default home app is a launcher you installed (not Talkies, not one the TV came with, not Android's
+     * "which app?" chooser). Then Talkies stays out of the way of the Home button.
+     */
+    private boolean otherLauncherChosen() {
+        android.content.pm.ResolveInfo r = getPackageManager().resolveActivity(
+                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+        if (r == null || r.activityInfo == null) return false;
+        String pkg = r.activityInfo.packageName;
+        return !pkg.equals(getPackageName()) && !pkg.equals("android") && !stockPackages.contains(pkg)
+                && (r.activityInfo.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0;
     }
 
     void openHome() {

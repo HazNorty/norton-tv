@@ -264,9 +264,9 @@ screen opens.
 - **OK** shows or hides a channel.
 - **Hold OK**, then **Up/Down**, moves it; **OK** places it, **Back** cancels. The first shown channel is the top row.
 
-To start with, it mirrors your Projectivy setup: Watch Next, JioHotstar · Top Picks For You, Netflix,
-YouTube · Recommended for you and Prime Video are shown; the others (Apple TV, Spotify, Xstream Play, ZEE5, YouTube
-Subscriptions, Trending and Music, OxygenPlay) start hidden. Channels an app adds later start hidden too.
+To start with, Watch Next and each app's own home-screen row are shown (the rows an app asks Android TV to show,
+or, where the TV doesn't say, as on Google TV, each app's first row); the rest start hidden, and so do channels an
+app adds later. A TV that had Talkies before this keeps the rows it had.
 Artwork is cached on the TV in `files/channels/`.
 
 ## Cricket
@@ -361,7 +361,7 @@ Control Center → **Talkies settings**, or **hold OK on the ⚙ icon** (a press
 | Remote keys | Give a remote button another job: open an app, Inputs, Talkies, or nothing. **Add a key**, press the button, choose. Navigation, OK, Back, Home, volume and power can't be changed |
 | Keys and location | Your TMDB key (picks), CricketData key (scores) and weather area. Type or paste each one; keys are tried with the service first and only saved if it accepts them. **Remove** clears one |
 | Network debugging | "On · port 5555" while computers on your network can control the TV over ADB (how Talkies was installed). **Turn off** (needs the permission below) or open Developer options; turning it on again is done in Developer options |
-| Home app | Shows the current home screen and opens Android's *Default home app* chooser (Talkies or Projectivy) |
+| Home app | Shows the current home screen and opens Android's *Default home app* chooser (on Google TV the choice doesn't stick; see *Use another home screen*) |
 | Sharp YouTube pictures | Off by default. On: YouTube cards in Continue get YouTube's 1280-pixel thumbnails, looked up by title and channel |
 | About | Credits for the data and code Talkies uses |
 
@@ -371,18 +371,26 @@ search when a Cricket card has no direct link. It only sees JioHotstar's screen,
 pick a card, and only looks for the search box. Switch it on once at **Settings → Device Preferences → Accessibility →
 Talkies**. Until then, choosing Turn off or the sleep timer takes you to that screen.
 
-## Switch between Talkies and Projectivy
+## Use another home screen
 
-- **On the TV, to Projectivy:** Talkies settings → **Home app** → **Projectivy Launcher**, then press Home.
-- **On the TV, back to Talkies:** in Projectivy, open the **Talkies** app, then Talkies settings → **Home app** → **Talkies**.
-- **From the Mac:**
+- **Google TV:** Google TV keeps its own launcher as the home app whatever you choose in *Default home app* (checked
+  on this TV), so third-party launchers, Talkies included, take the Home button with an accessibility service. To use
+  another one, turn off **Settings → Device Preferences → Accessibility → Talkies** and turn on that launcher's own
+  Home option. Turn Talkies' back on to return.
+- **Android TV:** Talkies settings → **Home app** opens Android's chooser; pick another launcher and Talkies' service
+  leaves the Home button to it. Pick Talkies there to come back.
+- **From a computer:**
 
   ```bash
-  ./switch-home.sh projectivy
-  ./switch-home.sh glass
+  ./switch-home.sh list                       # the home screens on the TV
+  ./switch-home.sh talkies                    # Talkies
+  ./switch-home.sh stock                      # the TV's own home screen
+  ./switch-home.sh com.spocky.projengmenu     # any launcher you installed, by package name
   ```
 
-To just peek at Projectivy, open its tile under All apps; the Home button still brings you back to Glass.
+  It says so when the TV ignores the choice (Google TV).
+
+To just peek at another launcher, open its tile under All apps; Home still brings you back to Talkies.
 
 ## Scripts
 

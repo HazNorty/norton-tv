@@ -19,17 +19,21 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * App channels, as Projectivy shows them: the rows apps publish to Android TV ("Top Picks For You" from JioHotstar,
- * "Netflix", "Recommended for you" from YouTube…), plus Watch Next. You choose which show and their order
- * (Control Center → Channels); that is kept in the "channels" preferences. Artwork is cached in files/channels/.
+ * App channels: the rows apps publish to Android TV ("Top Picks For You" from JioHotstar, "Netflix", "Recommended
+ * for you" from YouTube…), plus Watch Next, shown as Projectivy does. You choose which show and their order
+ * (Talkies settings → Channels); that is kept in the "channels" preferences. Until you do, Watch Next and the rows
+ * each app asked Android TV to show on the home screen are shown. Artwork is cached in files/channels/.
  * Reading programs and downloading artwork is blocking: call off the main thread.
  */
 final class Channels {
     private static final String TAG = "GlassChannels";
     static final String WATCH_NEXT = "watchnext";
     private static final int MAX_ITEMS = 15, ART_W = 440;  // cards are 400 px on screen (424 focused)
-    /** Shown until you change the selection: the rows you had in Projectivy. */
-    private static final String[] DEFAULT_SHOWN = {WATCH_NEXT, "in.startv.hotstar|Top Picks For You",
+    /**
+     * The first rows Talkies ever had (its author's, from Projectivy): kept for TVs that installed Talkies before the
+     * general default, so their rows don't change under them. New installs start from the browsable rows instead.
+     */
+    private static final String[] FIRST_SHOWN = {WATCH_NEXT, "in.startv.hotstar|Top Picks For You",
             "com.netflix.ninja|Netflix", "com.google.android.youtube.tv|Recommended for you",
             "com.amazon.amazonvideo.livingroom|Prime Video"};
 
@@ -59,7 +63,8 @@ final class Channels {
             found.put(w.key, w);
         }
         String[] cols = {TvContract.Channels._ID, TvContract.Channels.COLUMN_PACKAGE_NAME,
-                TvContract.Channels.COLUMN_DISPLAY_NAME, TvContract.Channels.COLUMN_TYPE};
+                TvContract.Channels.COLUMN_DISPLAY_NAME, TvContract.Channels.COLUMN_TYPE, TvContract.Channels.COLUMN_BROWSABLE};
+        Set<String> browsable = new HashSet<>();  // rows their apps asked Android TV to show on the home screen
         try (Cursor cur = c.getContentResolver().query(TvContract.Channels.CONTENT_URI, cols, null, null, null)) {
             while (cur != null && cur.moveToNext()) {
                 if (!TvContract.Channels.TYPE_PREVIEW.equals(cur.getString(3))) continue;
@@ -85,16 +90,36 @@ final class Channels {
                 ch.title = name.equalsIgnoreCase(app) || app.toLowerCase(Locale.ROOT).contains(name.toLowerCase(Locale.ROOT))
                         ? app : app + " · " + name;
                 found.put(key, ch);
+                if (cur.getInt(4) == 1) browsable.add(key);
             }
         } catch (Exception e) {
             Log.w(TAG, "Couldn't read channels: " + e);
         }
 
         SharedPreferences p = prefs(c);
+        // Decided once: a TV updating from a Talkies older than the general default keeps the first rows.
+        String defaults = p.getString("defaults", null);
+        if (defaults == null) {
+            defaults = updated(c) ? "first" : "browsable";
+            p.edit().putString("defaults", defaults).apply();
+        }
+        boolean first = defaults.equals("first");
+        if (!p.contains("shown")) Log.i(TAG, found.size() + " channels, " + browsable.size() + " browsable; starting rows: " + defaults);
+        Set<String> start = new HashSet<>();
+        if (first) {
+            start.addAll(Arrays.asList(FIRST_SHOWN));
+        } else {
+            start.add(WATCH_NEXT);
+            start.addAll(browsable);
+            if (browsable.isEmpty()) {
+                // No app marked a row: each app's first.
+                Set<String> apps = new HashSet<>();
+                for (Channel ch : found.values()) if (ch.pkg != null && apps.add(ch.pkg)) start.add(ch.key);
+            }
+        }
         List<String> order = new ArrayList<>(Arrays.asList(p.getString("order", "").split("\n")));
-        Set<String> shown = p.contains("shown") ? new HashSet<>(Arrays.asList(p.getString("shown", "").split("\n")))
-                : new HashSet<>(Arrays.asList(DEFAULT_SHOWN));
-        if (!p.contains("order")) order = new ArrayList<>(Arrays.asList(DEFAULT_SHOWN));
+        Set<String> shown = p.contains("shown") ? new HashSet<>(Arrays.asList(p.getString("shown", "").split("\n"))) : start;
+        if (!p.contains("order") && first) order = new ArrayList<>(Arrays.asList(FIRST_SHOWN));
         List<Channel> out = new ArrayList<>();
         for (String k : order) if (found.containsKey(k)) out.add(found.remove(k));
         // Channels you haven't placed yet go after, by name.
@@ -103,6 +128,16 @@ final class Channels {
         out.addAll(rest);
         for (Channel ch : out) ch.shown = shown.contains(ch.key);
         return out;
+    }
+
+    /** Whether this install was an update (first installed before the current version), not a fresh install. */
+    private static boolean updated(Context c) {
+        try {
+            android.content.pm.PackageInfo i = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
+            return i.firstInstallTime != i.lastUpdateTime;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
     }
 
     /** Saves the order and which are shown. */
