@@ -98,3 +98,8 @@ SOFTWARE.
 launcher (https://github.com/Gathin23/cleanyourtv, `launcher/app/src/main/java/com/gathin/tvhome/ServiceRepair.java`),
 and the sleep timer's one-minute warning follows its Sleep Timer add-on; both under the MIT license above
 (Copyright (c) 2026 Gathin; tv-vibehack was renamed CleanYourTV).
+
+## Geist and Geist Mono
+
+`app/src/main/res/font/geist.ttf` and `geist_mono.ttf`: Copyright 2024 The Geist Project Authors
+(https://github.com/vercel/geist-font), from Google Fonts, under the SIL Open Font License 1.1 (GEIST-OFL.txt).

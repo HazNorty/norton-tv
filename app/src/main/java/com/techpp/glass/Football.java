@@ -406,6 +406,7 @@ final class Football {
         Cricket.Match m = new Cricket.Match();
         m.football = true;
         m.ours = TEAM.equals(o.optString("a1")) || TEAM.equals(o.optString("a2"));
+        m.at = o.optLong("at");
         m.id = "fb" + o.optString("id");
         m.live = o.optBoolean("live");
         m.ended = o.optBoolean("ended");

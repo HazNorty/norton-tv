@@ -14,7 +14,7 @@ MODE=install; ARGS=()
 for a in "$@"; do case "$a" in --home) MODE=home ;; --projectivy) MODE=projectivy ;; *) ARGS+=("$a") ;; esac; done
 DEV="${ARGS[0]:-$(tv_default)}"; need_tv
 PKG=com.haznorty.nortontv
-NORTON_HOME=$PKG/com.techpp.glass.HomeActivity
+NORTON_HOME=$PKG/com.techpp.glass.DashboardActivity
 PROJECTIVY_HOME=com.spocky.projengmenu/.ui.home.MainActivity
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export JAVA_HOME="${JAVA_HOME:-$LOCALAPPDATA/Programs/Eclipse Adoptium/jdk-17.0.20.1+1}"

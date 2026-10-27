@@ -1881,6 +1881,7 @@ public class HomeActivity extends Activity {
     private void back() {
         if (zone == Z_MENU) closeMenu();
         else if (zone != Z_DOCK) focusDock(dockIdx);
+        else finish();  // Norton TV: this screen is All apps now; Back from the dock returns to the dashboard
     }
 
     /**
