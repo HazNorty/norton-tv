@@ -134,6 +134,7 @@ public class HomeActivity extends Activity {
     private Cricket cricket;
     private Football football;
     private Calendars calendars;
+    private Cricket.Match teamMatch;  // Arsenal's next match from their fixture list (Football.teamNext)
     private List<Calendars.Event> calendarEvents = new ArrayList<>();
     private List<Cricket.Match> matches = new ArrayList<>(), footballMatches = new ArrayList<>();
     private List<Channels.Channel> appChannels = new ArrayList<>();  // the shown app channels, without Cricket
@@ -424,16 +425,42 @@ public class HomeActivity extends Activity {
      */
     private String scores() { return "off".equals(prefs.getString("scores", "football")) ? "off" : "football"; }
     private List<Cricket.Match> cricketShown() { return scores().equals("both") || scores().equals("cricket") ? matches : new ArrayList<>(); }
-    private List<Cricket.Match> footballShown() { return scores().equals("both") || scores().equals("football") ? footballMatches : new ArrayList<>(); }
+    /**
+     * The football to show, Arsenal first: their live match, other live matches, Arsenal's next match (from their
+     * fixture list when it's further off than the scoreboard window), then the rest.
+     */
+    private List<Cricket.Match> footballShown() {
+        if (!scores().equals("football")) return new ArrayList<>();
+        List<Cricket.Match> out = new ArrayList<>();
+        for (Cricket.Match m : footballMatches) if (m.live && m.ours) out.add(m);
+        for (Cricket.Match m : footballMatches) if (m.live && !m.ours) out.add(m);
+        boolean listed = false;
+        for (Cricket.Match m : footballMatches) if (m.ours && !m.live && !m.ended) { out.add(m); listed = true; }
+        if (!listed && teamMatch != null && !teamMatch.live && !containsMatch(footballMatches, teamMatch.id)) out.add(teamMatch);
+        for (Cricket.Match m : footballMatches) if (!m.live && !(m.ours && !m.ended)) out.add(m);
+        return out;
+    }
+
+    private static boolean containsMatch(List<Cricket.Match> list, String id) {
+        for (Cricket.Match m : list) if (m.id.equals(id)) return true;
+        return false;
+    }
+
+    /** Arsenal's red, for the fine accent while they're playing. */
+    private static final int TEAM_RED = 0xFFE20520;
 
     /**
-     * "● LIVE  IND 245/4 (42.3) v AUS" or "● LIVE  67'  ·  ARS 2–1 CHE", or today's next match, or today's result;
-     * hidden when there's none. A live match wins, cricket before football.
+     * "● LIVE  EPL · 67' · ARS 2–1 CHE", else Arsenal's next match, else today's next match or latest result; hidden
+     * when there's none. An Arsenal match on now wins, and turns the line under the clock Arsenal red.
      */
     private void updateScore() {
-        List<Cricket.Match> c = cricketShown(), f = footballShown();
-        Cricket.Match m = !c.isEmpty() && c.get(0).live ? c.get(0) : !f.isEmpty() && f.get(0).live ? f.get(0)
-                : !c.isEmpty() ? c.get(0) : !f.isEmpty() ? f.get(0) : null;
+        List<Cricket.Match> f = footballShown();
+        Cricket.Match m = null;
+        for (Cricket.Match x : f) if (x.live && x.ours) { m = x; break; }
+        if (m == null) for (Cricket.Match x : f) if (x.live) { m = x; break; }
+        if (m == null) for (Cricket.Match x : f) if (x.ours && !x.ended) { m = x; break; }
+        if (m == null && !f.isEmpty()) m = f.get(0);
+        setTeamAccent(m != null && m.live && m.ours);
         if (m == null) {
             score.setVisibility(View.GONE);
             credit.setAlpha(1f);
@@ -447,6 +474,12 @@ public class HomeActivity extends Activity {
                 b.append("● LIVE  ");
                 b.setSpan(new ForegroundColorSpan(0xFFFF453A), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 b.append(m.league).append("  ·  ").append(m.status).append("  ·  ").append(result);
+            } else if (!m.ended && m.ours) {
+                // "Next  ·  Liverpool (A)  ·  Sun 4:30 pm  ·  EPL": who Arsenal play, where, and when.
+                boolean home = Football.TEAM.equals(m.short1);
+                String other = home ? m.t2 : m.t1;
+                b.append("Next  ·  ").append(other).append(home ? " (H)" : " (A)")
+                        .append(m.start == null ? "" : "  ·  " + m.start).append("  ·  ").append(m.league);
             } else if (!m.ended) {
                 b.append(m.league).append("  ·  ").append(m.short1).append(" v ").append(m.short2)
                         .append(m.start == null ? "" : "  ·  " + m.start);
@@ -473,6 +506,37 @@ public class HomeActivity extends Activity {
         score.setTextColor(theme.text);
         score.setVisibility(View.VISIBLE);
         credit.setAlpha(0f);  // the score sits where the TMDB credit goes; TMDB is credited in the README too
+    }
+
+    /** Arsenal's next match came in (or went): redraw the score line and the Football row. */
+    private void onTeam() {
+        teamMatch = football.teamNext();
+        updateScore();
+        showChannels(appChannels);
+    }
+
+    private boolean teamAccent;
+
+    /** A fine Arsenal-red line under the clock while Arsenal are playing; gone when they aren't. */
+    private void setTeamAccent(boolean on) {
+        if (on == teamAccent) return;
+        teamAccent = on;
+        View clock = findViewById(R.id.big_time);
+        if (clock instanceof TextView) {
+            TextView t = (TextView) clock;
+            if (on) {
+                GradientDrawable line = new GradientDrawable();
+                line.setColor(TEAM_RED);
+                line.setCornerRadius(px(1.5f));
+                line.setSize(px(56), px(3));
+                t.setCompoundDrawablePadding(px(6));
+                t.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, null, line);
+            } else {
+                t.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, null, null);
+            }
+        }
+        // The match that just ended was theirs: ask for the next fixture.
+        if (!on) football.teamStale();
     }
 
     private void onMatches(List<Cricket.Match> list) {
@@ -677,9 +741,9 @@ public class HomeActivity extends Activity {
         // The row with a match being played goes first: Football above Cricket while only football is live.
         boolean footballFirst = !footballRow.isEmpty() && footballRow.get(0).live
                 && (cricketRow.isEmpty() || !cricketRow.get(0).live);
-        if (footballFirst) list.add(scoresRow("football", "Football", footballRow));
+        if (footballFirst) list.add(scoresRow("football", "Premier League", footballRow));
         if (!cricketRow.isEmpty()) list.add(scoresRow("cricket", "Cricket", cricketRow));
-        if (!footballRow.isEmpty() && !footballFirst) list.add(scoresRow("football", "Football", footballRow));
+        if (!footballRow.isEmpty() && !footballFirst) list.add(scoresRow("football", "Premier League", footballRow));
         list.addAll(apps);
         {
             {
@@ -994,7 +1058,8 @@ public class HomeActivity extends Activity {
     /** A match card: each team's flag, short name and score, then the status ("India need 38 off 24"). */
     private View cricketCard(Cricket.Match m) {
         FrameLayout card = new FrameLayout(this);
-        card.setBackground(rounded(theme.tileBg, 0, 10));
+        // Norton TV: Arsenal's matches carry a fine Arsenal-red edge.
+        card.setBackground(rounded(theme.tileBg, m.ours ? TEAM_RED : 0, 10));
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(px(14), px(12), px(14), px(10));
@@ -3001,7 +3066,9 @@ public class HomeActivity extends Activity {
         background.execute(() -> {
             List<Cricket.Match> saved = cricket.cached(), savedFootball = football.cached();
             List<Calendars.Event> savedEvents = calendars.cached();
+            Cricket.Match savedTeam = football.teamNext();
             runOnUiThread(() -> {
+                teamMatch = savedTeam;
                 onCalendar(savedEvents);
                 if (matches.isEmpty() && !saved.isEmpty()) onMatches(saved);
                 if (footballMatches.isEmpty() && !savedFootball.isEmpty()) onFootball(savedFootball);
@@ -3068,7 +3135,10 @@ public class HomeActivity extends Activity {
             return;
         }
         if (!scores().equals("off") && !scores().equals("football")) cricket.refreshIfStale(this::onMatches);
-        if (scores().equals("both") || scores().equals("football")) football.refreshIfStale(this::onFootball);
+        if (scores().equals("football")) {
+            football.refreshTeamIfStale(this::onTeam);
+            football.refreshIfStale(this::onFootball);
+        }
         calendars.refreshIfStale(this::onCalendar);
         weather.refreshIfStale(this::onWeather);
         if (forYou) trending.refreshIfStale(this::onPicks);

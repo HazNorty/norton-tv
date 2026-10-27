@@ -47,6 +47,10 @@ final class Football {
     private static final long FULL_MS = 15 * 60_000L, LIVE_MS = 30_000L, RETRY_MS = 5 * 60_000L;
     private static final long PAST_MS = 12 * 3600_000L, AHEAD_MS = 24 * 3600_000L;
     private static final int MAX = 12;
+    /** Norton TV: the team followed everywhere (ESPN team id and abbreviation). */
+    static final String TEAM_ID = "359", TEAM = "ARS", TEAM_NAME = "Arsenal";
+    /** Arsenal's fixture list (every competition) is asked for at most every 3 hours. */
+    private static final long TEAM_MS = 3 * 3600_000L;
 
     /**
      * ESPN's league ids, the names shown in Control Center and on the cards, and the short ones fans use, for the
@@ -92,7 +96,7 @@ final class Football {
     private final SharedPreferences prefs;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
-    private boolean running;
+    private boolean running, teamRunning;
 
     Football(Context c) {
         ctx = c.getApplicationContext();
@@ -142,18 +146,90 @@ final class Football {
 
     void useDefaults() { prefs.edit().remove("leagues").remove("ok_at").remove("try_at").apply(); }
 
+    // ---------------------------------------------------------------- Arsenal
+
+    /** Arsenal's next match (or the one on now) in any competition, from the saved fixture list; null if none. */
+    Cricket.Match teamNext() {
+        try (InputStream in = new FileInputStream(new File(dir, "team.json"))) {
+            JSONObject o = new JSONObject(new String(readAll(in), StandardCharsets.UTF_8));
+            // A kick-off more than 3 hours ago is over, whatever the saved copy says.
+            if (o.optLong("at") < System.currentTimeMillis() - 3 * 3600_000L) return null;
+            return fromJson(o);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Asks ESPN for Arsenal's fixtures every 3 hours (every 5 minutes after a failure), while Home shows. */
+    void refreshTeamIfStale(Runnable done) {
+        long now = System.currentTimeMillis();
+        if (teamRunning || now - prefs.getLong("team_ok_at", 0) < TEAM_MS || now - prefs.getLong("team_try_at", 0) < RETRY_MS) return;
+        teamRunning = true;
+        prefs.edit().putLong("team_try_at", now).apply();
+        worker.execute(() -> {
+            try {
+                JSONArray events = get(API + "eng.1/teams/" + TEAM_ID + "/schedule?fixture=true").optJSONArray("events");
+                JSONObject next = null;
+                for (int i = 0; events != null && i < events.length() && next == null; i++) {
+                    JSONObject e = events.getJSONObject(i);
+                    JSONObject lg = e.optJSONObject("league");
+                    String league = lg == null ? "eng.1" : lg.optString("slug", "eng.1");
+                    JSONObject m = parse(e, league, "");
+                    if (m != null && !m.optBoolean("ended") && m.optLong("at") > now - 3 * 3600_000L) next = m;
+                }
+                if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot create " + dir);
+                File f = new File(dir, "team.json");
+                if (next == null) { f.delete(); }
+                else try (OutputStream out = new FileOutputStream(f)) { out.write(next.toString().getBytes(StandardCharsets.UTF_8)); }
+                prefs.edit().putLong("team_ok_at", now).apply();
+                main.post(done);
+            } catch (Exception e) {
+                Log.w(TAG, "Arsenal fixtures failed: " + e.getClass().getSimpleName() + " " + e.getMessage());
+            } finally {
+                main.post(() -> teamRunning = false);
+            }
+        });
+    }
+
+    /** Forget when Arsenal's fixtures were last fetched, so the next refresh asks again (after their match ends). */
+    void teamStale() { prefs.edit().remove("team_ok_at").apply(); }
+
+    /**
+     * Your leagues, plus the competition of Arsenal's next match while it's within the window (a cup or European tie
+     * outside your leagues), so their match gets live scores too. Only Arsenal's match from that extra one is kept.
+     */
+    private List<String> fetchLeagues() {
+        List<String> on = new ArrayList<>(leagues());
+        try (InputStream in = new FileInputStream(new File(dir, "team.json"))) {
+            JSONObject o = new JSONObject(new String(readAll(in), StandardCharsets.UTF_8));
+            long at = o.optLong("at"), now = System.currentTimeMillis();
+            String league = o.optString("league");
+            if (!league.isEmpty() && at > now - PAST_MS && at < now + AHEAD_MS && !on.contains(league)) on.add(league);
+        } catch (Exception ignored) {
+            // No saved fixture: just your leagues.
+        }
+        return on;
+    }
+
+    /** Whether a saved match belongs on screen: one of your leagues, or Arsenal's match in the extra competition. */
+    private boolean wanted(JSONObject o, List<String> yours, List<String> fetched) {
+        String league = o.optString("league");
+        if (!fetched.contains(league)) return false;
+        return yours.contains(league) || TEAM.equals(o.optString("a1")) || TEAM.equals(o.optString("a2"));
+    }
+
     // ---------------------------------------------------------------- fetching
 
     /** The last matches fetched, still within the window. Blocking (reads a small file). */
     List<Cricket.Match> cached() {
         try (InputStream in = new FileInputStream(new File(dir, "matches.json"))) {
             JSONArray a = new JSONArray(new String(readAll(in), StandardCharsets.UTF_8));
-            List<String> on = leagues();
+            List<String> on = leagues(), fetched = fetchLeagues();
             List<Cricket.Match> out = new ArrayList<>();
             long now = System.currentTimeMillis();
             for (int i = 0; i < a.length(); i++) {
                 JSONObject o = a.getJSONObject(i);
-                if (!on.contains(o.optString("league"))) continue;
+                if (!wanted(o, on, fetched)) continue;
                 long at = o.optLong("at");
                 if (at < now - PAST_MS || at > now + AHEAD_MS) continue;
                 out.add(fromJson(o));
@@ -166,7 +242,7 @@ final class Football {
 
     void refreshIfStale(Listener l) {
         if (running) return;
-        List<String> on = leagues();
+        List<String> on = fetchLeagues();
         if (on.isEmpty()) return;
         long now = System.currentTimeMillis();
         boolean full = now - prefs.getLong("ok_at", 0) >= FULL_MS;
@@ -235,7 +311,7 @@ final class Football {
         Set<String> live = new LinkedHashSet<>();
         for (JSONObject o : byId.values()) {
             long at = o.optLong("at");
-            if (!on.contains(o.optString("league")) || at < now - PAST_MS || at > now + AHEAD_MS) continue;
+            if (!wanted(o, leagues(), on) || at < now - PAST_MS || at > now + AHEAD_MS) continue;
             keep.add(o);
             boolean soon = !o.optBoolean("ended") && at - now < 15 * 60_000L;
             if (o.optBoolean("live") || soon) live.add(o.optString("league") + "@" + o.optString("date"));
@@ -307,16 +383,25 @@ final class Football {
         o.put("a2", away.getJSONObject("team").optString("abbreviation"));
         o.put("full1", home.getJSONObject("team").optString("displayName"));
         o.put("full2", away.getJSONObject("team").optString("displayName"));
-        o.put("img1", home.getJSONObject("team").optString("logo"));
-        o.put("img2", away.getJSONObject("team").optString("logo"));
+        o.put("img1", logo(home.getJSONObject("team")));
+        o.put("img2", logo(away.getJSONObject("team")));
         o.put("s1", "pre".equals(state) ? "" : home.optString("score"));
         o.put("s2", "pre".equals(state) ? "" : away.optString("score"));
         return o;
     }
 
+    /** A team's crest: the scoreboard gives "logo", a team's fixture list a "logos" array instead. */
+    private static String logo(JSONObject team) {
+        String s = team.optString("logo");
+        if (!s.isEmpty()) return s;
+        JSONArray a = team.optJSONArray("logos");
+        return a == null || a.length() == 0 ? "" : a.optJSONObject(0).optString("href");
+    }
+
     private static Cricket.Match fromJson(JSONObject o) {
         Cricket.Match m = new Cricket.Match();
         m.football = true;
+        m.ours = TEAM.equals(o.optString("a1")) || TEAM.equals(o.optString("a2"));
         m.id = "fb" + o.optString("id");
         m.live = o.optBoolean("live");
         m.ended = o.optBoolean("ended");
