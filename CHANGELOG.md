@@ -3,6 +3,12 @@
 Versions are numbered *major.minor.fix*. While Talkies is in beta they start with 0: a new minor number brings new
 features, a new fix number only fixes. The version shows in Talkies settings → About.
 
+## Unreleased
+
+### Changed
+- A new logo: a cinema ticket with a play button, on a warm dark background, for the app icon and the TV banner
+  (it replaces the two glass cards from when Talkies was called Glass Home).
+
 ## 0.2.0 — 28 October 2026
 
 ### New

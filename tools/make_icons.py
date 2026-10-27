@@ -4,6 +4,7 @@
 
 The wordmark is Outfit Medium (the launcher's own font) turned into outlines, so no font is needed at runtime.
 """
+import math
 import os
 import sys
 
@@ -17,8 +18,10 @@ ROOT = os.path.dirname(HERE)
 RES = os.path.join(ROOT, "app", "src", "main", "res")
 PREVIEW = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", "icon-preview")
 
-BG_TOP, BG_BOTTOM = "#22305F", "#07080F"   # deep blue to near black
-GLOW = "#7B6CFF"                            # soft violet light behind the logo
+BG_TOP, BG_BOTTOM = "#2A1216", "#0B0608"   # warm dark red to near black
+GLOW = "#FF5A3C"                            # a warm light behind the logo, like a cinema screen
+TICKET_A, TICKET_B = "#FFB547", "#FF4D5E"   # the ticket: amber to red
+PLAY = "#FFF7EE"
 TEXT = "#F5F5F7"
 
 
@@ -38,21 +41,45 @@ def wordmark(text, size, x, baseline):
 
 
 def logo(ox, oy, s):
-    """Two stacked glass cards in an s×s box at (ox, oy): (shape, fill, stroke, stroke width) tuples."""
-    def rrect(x, y, w, h, r):
-        x, y, w, h, r = (ox + x * s, oy + y * s, w * s, h * s, r * s)
-        return (f"M{x + r:.2f},{y:.2f}h{w - 2 * r:.2f}a{r:.2f},{r:.2f} 0 0 1 {r:.2f},{r:.2f}v{h - 2 * r:.2f}"
-                f"a{r:.2f},{r:.2f} 0 0 1 -{r:.2f},{r:.2f}h-{w - 2 * r:.2f}a{r:.2f},{r:.2f} 0 0 1 -{r:.2f},-{r:.2f}"
-                f"v-{h - 2 * r:.2f}a{r:.2f},{r:.2f} 0 0 1 {r:.2f},-{r:.2f}z")
+    """
+    A cinema ticket, tilted, with a play button and a perforated stub, in an s×s box at (ox, oy).
+    Returns (path, fill, stroke, stroke width) tuples; fill "ticket" is the amber-to-red gradient (see ticket_box).
+    """
+    a = math.radians(-12)
+    cx, cy = ox + s / 2, oy + s / 2
+
+    def pt(x, y):
+        # unit coordinates in the box, turned 12° about its centre
+        x, y = ox + x * s - cx, oy + y * s - cy
+        return f"{cx + x * math.cos(a) - y * math.sin(a):.2f},{cy + x * math.sin(a) + y * math.cos(a):.2f}"
+
+    l, r_, t, b, c, n = 0.06, 0.94, 0.24, 0.76, 0.075, 0.085   # edges, corner radius, notch radius
+    rad = f"{n * s:.2f},{n * s:.2f}"
+    body = (f"M{pt(l + c, t)} L{pt(r_ - c, t)} Q{pt(r_, t)} {pt(r_, t + c)} L{pt(r_, 0.5 - n)} "
+            f"A{rad} 0 0 0 {pt(r_, 0.5 + n)} L{pt(r_, b - c)} Q{pt(r_, b)} {pt(r_ - c, b)} L{pt(l + c, b)} "
+            f"Q{pt(l, b)} {pt(l, b - c)} L{pt(l, 0.5 + n)} A{rad} 0 0 0 {pt(l, 0.5 - n)} L{pt(l, t + c)} "
+            f"Q{pt(l, t)} {pt(l + c, t)} Z")
+    # the perforation: dots (vector drawables can't dash a line)
+    dots = []
+    d = 0.022 * s
+    for k in range(5):
+        y = 0.32 + k * 0.09
+        p = pt(0.72, y)
+        px, py = (float(v) for v in p.split(","))
+        dots.append(f"M{px - d:.2f},{py:.2f} A{d:.2f},{d:.2f} 0 1 1 {px + d:.2f},{py:.2f} A{d:.2f},{d:.2f} 0 1 1 {px - d:.2f},{py:.2f} Z")
+    # the play button, corners softened
+    play = (f"M{pt(0.335, 0.405)} Q{pt(0.335, 0.37)} {pt(0.366, 0.388)} L{pt(0.535, 0.483)} "
+            f"Q{pt(0.565, 0.5)} {pt(0.535, 0.517)} L{pt(0.366, 0.612)} Q{pt(0.335, 0.63)} {pt(0.335, 0.595)} Z")
     return [
-        # back card, up and to the right
-        (rrect(0.30, 0.04, 0.62, 0.62, 0.15), "#2EFFFFFF", "#59FFFFFF", 0.022 * s),
-        # front card: brighter glass with a crisp edge
-        (rrect(0.08, 0.30, 0.62, 0.62, 0.15), "front", "#E6FFFFFF", 0.030 * s),
-        # a sheen across the front card's top-left
-        (f"M{ox + 0.17 * s:.2f},{oy + 0.47 * s:.2f}q{0.02 * s:.2f},-{0.08 * s:.2f} {0.12 * s:.2f},-{0.09 * s:.2f}",
-         None, "#B3FFFFFF", 0.035 * s),
+        (body, "ticket", None, 0),
+        (" ".join(dots), "#592A1216", None, 0),
+        (play, PLAY, None, 0),
     ]
+
+
+def ticket_box(ox, oy, s):
+    """Where the ticket's gradient runs: from its top-left (amber) to its bottom-right (red)."""
+    return (ox + 0.1 * s, oy + 0.2 * s, ox + 0.9 * s, oy + 0.8 * s)
 
 
 # ---------------------------------------------------------------- Android vector drawables
@@ -79,9 +106,9 @@ def vd_paths(shapes, front_box):
     for d, fill, stroke, width in shapes:
         attrs = f'android:pathData="{d}"'
         inner = ""
-        if fill == "front":
+        if fill == "ticket":
             x0, y0, x1, y1 = front_box
-            inner = vd_gradient_linear(x0, y0, x1, y1, "#8CFFFFFF", "#26FFFFFF")
+            inner = vd_gradient_linear(x0, y0, x1, y1, TICKET_A, TICKET_B)
         elif fill:
             attrs += f' android:fillColor="{fill}"'
         if stroke:
@@ -103,12 +130,12 @@ def vector(w, h, body):
 def svg_paths(shapes, front_box):
     out = []
     for d, fill, stroke, width in shapes:
-        f = "url(#front)" if fill == "front" else (svg_color(fill) if fill else "none")
+        f = "url(#front)" if fill == "ticket" else (svg_color(fill) if fill else "none")
         s = f' stroke="{svg_color(stroke)}" stroke-width="{width:.2f}" stroke-linecap="round"' if stroke else ""
         out.append(f'<path d="{d}" fill="{f}"{s}/>')
     x0, y0, x1, y1 = front_box
     defs = (f'<linearGradient id="front" gradientUnits="userSpaceOnUse" x1="{x0}" y1="{y0}" x2="{x1}" y2="{y1}">'
-            f'<stop offset="0" stop-color="#fff" stop-opacity="0.55"/><stop offset="1" stop-color="#fff" stop-opacity="0.15"/>'
+            f'<stop offset="0" stop-color="{TICKET_A}"/><stop offset="1" stop-color="{TICKET_B}"/>'
             f'</linearGradient>')
     return defs, "".join(out)
 
@@ -135,13 +162,13 @@ def main():
     os.makedirs(PREVIEW, exist_ok=True)
 
     # Banner: 320×180, logo then wordmark, centred.
-    W, H, LOGO, GAP, SIZE = 320, 180, 60, 14, 34
+    W, H, LOGO, GAP, SIZE = 320, 180, 74, 8, 34
     text_d, text_w = wordmark("Talkies", SIZE, 0, 0)
     left = (W - (LOGO + GAP + text_w)) / 2
     lx, ly = left, (H - LOGO) / 2
     text_d, _ = wordmark("Talkies", SIZE, lx + LOGO + GAP, H / 2 + SIZE * 0.36)
     shapes = logo(lx, ly, LOGO)
-    front = (lx + 0.08 * LOGO, ly + 0.30 * LOGO, lx + 0.70 * LOGO, ly + 0.92 * LOGO)
+    front = ticket_box(lx, ly, LOGO)
     glow = (lx + LOGO / 2, H / 2, 150)
     body = "\n".join([
         f'    <path android:pathData="M0,0h{W}v{H}h-{W}z">{vd_gradient_linear(0, 0, W, H, BG_TOP, BG_BOTTOM)}</path>',
@@ -155,10 +182,10 @@ def main():
         svg(W, H, glow, defs, paths + f'<path d="{text_d}" fill="{TEXT}"/>'))
 
     # Adaptive icon: 108×108 layers; the logo sits inside the 66-unit safe zone.
-    S, L = 108, 52
+    S, L = 108, 64
     ix = iy = (S - L) / 2
     shapes = logo(ix, iy, L)
-    front = (ix + 0.08 * L, iy + 0.30 * L, ix + 0.70 * L, iy + 0.92 * L)
+    front = ticket_box(ix, iy, L)
     open(os.path.join(RES, "drawable", "ic_launcher_background.xml"), "w").write(vector(S, S, "\n".join([
         f'    <path android:pathData="M0,0h{S}v{S}h-{S}z">{vd_gradient_linear(0, 0, S, S, BG_TOP, BG_BOTTOM)}</path>',
         f'    <path android:pathData="M0,0h{S}v{S}h-{S}z">{vd_gradient_radial(S / 2, S / 2, 60, GLOW)}</path>',
