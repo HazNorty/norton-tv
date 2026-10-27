@@ -294,14 +294,14 @@ public class HomeActivity extends Activity {
                 t.iconBg = 0xC0FFFFFF; t.iconStroke = 0x10000000; t.iconFocusBg = 0xFF1D1D1F; t.iconFocusFg = 0xFFFFFFFF;
                 t.band = 0x94FFFFFF; t.bandStroke = 0xF2FFFFFF;
                 t.scrimTop = 0x8CF5F6F8; t.scrimMid = 0x33EBEEF2; t.scrimBottom = 0xA6E2E5EA;
-                t.menuBg = 0xF7FFFFFF; t.menuStroke = 0x14000000; t.menuFocusBg = 0xFF1D1D1F; t.menuFocusText = 0xFFFFFFFF;
+                t.menuBg = 0xFFFFFFFF; t.menuStroke = 0x14000000; t.menuFocusBg = 0xFF1D1D1F; t.menuFocusText = 0xFFFFFFFF;
                 t.tileBg = 0xFFD9DCE1; t.ambientAlpha = 0.22f;
             } else {
                 t.bgTop = 0xFF121419; t.bgBottom = 0xFF08090C; t.text = 0xFFF5F5F7; t.text2 = 0xFFA1A1A6;
                 t.iconBg = 0x1AFFFFFF; t.iconStroke = 0x1FFFFFFF; t.iconFocusBg = 0xFFF5F5F7; t.iconFocusFg = 0xFF111113;
                 t.band = 0x12FFFFFF; t.bandStroke = 0x1FFFFFFF;
                 t.scrimTop = 0x5908090C; t.scrimMid = 0x2608090C; t.scrimBottom = 0xB308090C;
-                t.menuBg = 0xF51C1C1F; t.menuStroke = 0x2EFFFFFF; t.menuFocusBg = 0xFFF5F5F7; t.menuFocusText = 0xFF111113;
+                t.menuBg = 0xFF1C1C1F; t.menuStroke = 0x2EFFFFFF; t.menuFocusBg = 0xFFF5F5F7; t.menuFocusText = 0xFF111113;
                 t.tileBg = 0xFF232326; t.ambientAlpha = 0.30f;
             }
             return t;
@@ -1548,7 +1548,7 @@ public class HomeActivity extends Activity {
                 else if (iconIdx == P_INPUTS) openInputs();
                 else if (iconIdx == P_WIFI) start(new Intent(Settings.ACTION_WIFI_SETTINGS));
                 else if (iconIdx == P_BELL) openUpdates();
-                else start(new Intent(Settings.ACTION_SETTINGS));
+                else openTvSettings();
                 break;
             case Z_TABS:
                 focusPicks(picksRow.anchor());
@@ -1595,6 +1595,20 @@ public class HomeActivity extends Activity {
     private void back() {
         if (zone == Z_MENU) closeMenu();
         else if (zone != Z_DOCK) focusDock(dockIdx);
+    }
+
+    /**
+     * The TV's settings. Some firmware hides the standard entry (some projectors); Android TV's own settings app is
+     * usually still there. An idea from CleanYourTV (MIT).
+     */
+    private void openTvSettings() {
+        Intent i = new Intent(Settings.ACTION_SETTINGS);
+        if (pm.resolveActivity(i, 0) == null) {
+            Intent tv = new Intent(Intent.ACTION_MAIN).setClassName("com.android.tv.settings", "com.android.tv.settings.MainSettings");
+            if (pm.resolveActivity(tv, 0) != null) i = tv;
+            else Toast.makeText(this, "This TV has no settings app Talkies can open", Toast.LENGTH_SHORT).show();
+        }
+        start(i);
     }
 
     private void start(Intent i) {
@@ -1798,7 +1812,13 @@ public class HomeActivity extends Activity {
         if (back != null) back.run(); else focusTop(menuAnchor);
     }
 
-    private void openInputs() {
+    private void openInputs() { openInputs(!prefs.getBoolean("inputs_connected_only", false)); }
+
+    /**
+     * HDMI and AV ports, then Live TV. With Talkies settings → Empty inputs set to "Under More inputs", ports with
+     * nothing plugged in wait behind a More inputs row ({@code all} false). An idea from CleanYourTV (MIT).
+     */
+    private void openInputs(boolean all) {
         beginMenu(P_INPUTS, null);
         TvInputManager tim = getSystemService(TvInputManager.class);
         List<TvInputInfo> hdmi = new ArrayList<>(), av = new ArrayList<>(), tuners = new ArrayList<>();
@@ -1823,15 +1843,27 @@ public class HomeActivity extends Activity {
             if (tuner == null && system) tuner = i;
         }
         Collections.sort(hdmi, (a, b) -> label(a).compareTo(label(b)));
-        int n = 1;
+        int n = 1, hidden = 0, firstEmpty = -1;
         boolean named = false;
         for (TvInputInfo i : hdmi) {
-            View row = addInput(fixLabel(label(i), "HDMI " + n++), tim, i, passthrough(i));
+            String name = fixLabel(label(i), "HDMI " + n++);
+            if (!connected(tim, i)) {
+                if (!all) { hidden++; continue; }
+                if (firstEmpty < 0) firstEmpty = menuItems.size();
+            }
+            View row = addInput(name, tim, i, passthrough(i));
             String device = cecStatus(tim, cec.get(i.getId()));
             if (device != null) { setStatus(row, device); named = true; }
         }
         n = 1;
-        for (TvInputInfo i : av) addInput(av.size() == 1 ? "AV" : fixLabel(label(i), "AV " + n++), tim, i, passthrough(i));
+        for (TvInputInfo i : av) {
+            String name = av.size() == 1 ? "AV" : fixLabel(label(i), "AV " + n++);
+            if (!connected(tim, i)) {
+                if (!all) { hidden++; continue; }
+                if (firstEmpty < 0) firstEmpty = menuItems.size();
+            }
+            addInput(name, tim, i, passthrough(i));
+        }
         final TvInputInfo tunerInfo = tuner;
         addRow("Live TV", null, () -> {
             if (tunerInfo != null) {
@@ -1844,7 +1876,14 @@ public class HomeActivity extends Activity {
             tv.setDataAndType(TvContract.Channels.CONTENT_URI, "vnd.android.cursor.dir/channel");
             start(tv);
         }, false);
+        if (hidden > 0) addRow("More inputs", String.valueOf(hidden), () -> openInputs(true), false);
         showMenu(named ? 340 : 220);
+        // Opened from More inputs: start on the first port it brought back.
+        if (all && firstEmpty > 0 && prefs.getBoolean("inputs_connected_only", false)) focusMenu(firstEmpty);
+    }
+
+    private static boolean connected(TvInputManager tim, TvInputInfo info) {
+        return tim != null && info != null && tim.getInputState(info.getId()) != TvInputManager.INPUT_STATE_DISCONNECTED;
     }
 
     private String label(TvInputInfo i) { return String.valueOf(i.loadLabel(this)); }
@@ -1863,8 +1902,7 @@ public class HomeActivity extends Activity {
     }
 
     private View addInput(String text, TvInputManager tim, TvInputInfo info, Runnable action) {
-        boolean connected = tim != null && info != null
-                && tim.getInputState(info.getId()) != TvInputManager.INPUT_STATE_DISCONNECTED;
+        boolean connected = connected(tim, info);
         View row = addRow(text, null, action, false);
         ImageView dot = row.findViewById(R.id.input_dot);
         dot.setVisibility(connected ? View.VISIBLE : View.INVISIBLE);
@@ -2033,7 +2071,9 @@ public class HomeActivity extends Activity {
         beginMenu(settingsAt, "Remote keys");
         for (Map.Entry<Integer, String> e : RemoteKeys.all(this).entrySet()) {
             int code = e.getKey();
-            addRow(RemoteKeys.keyName(code), RemoteKeys.describe(this, e.getValue()), () -> openKeyActions(code), false);
+            String hold = RemoteKeys.holdAction(this, code);
+            addRow(RemoteKeys.keyName(code), RemoteKeys.describe(this, e.getValue())
+                    + (hold == null ? "" : "  ·  hold: " + RemoteKeys.describe(this, hold)), () -> openKeyActions(code), false);
         }
         addRow("Add a key", null, this::learnKey, false);
         showMenu(360);
@@ -2059,13 +2099,32 @@ public class HomeActivity extends Activity {
         addRow("Inputs", null, () -> setKey(code, RemoteKeys.INPUTS), false);
         addRow("Talkies", null, () -> setKey(code, RemoteKeys.HOME), false);
         addRow("Do nothing", null, () -> setKey(code, RemoteKeys.NONE), false);
-        if (RemoteKeys.action(this, code) != null) addRow("Back to normal", null, () -> setKey(code, null), false);
+        if (RemoteKeys.action(this, code) != null) {
+            String hold = RemoteKeys.holdAction(this, code);
+            addRow("When held", hold == null ? "same as a press" : RemoteKeys.describe(this, hold), () -> openHoldActions(code), false);
+            addRow("Back to normal", null, () -> setKey(code, null), false);
+        }
         showMenu(420);
     }
 
-    private void openKeyApps(int code) {
+    /** A second job for holding the button (only for buttons with a press job: see RemoteKeys). */
+    private void openHoldActions(int code) {
+        String hold = RemoteKeys.holdAction(this, code);
+        beginMenu(settingsAt, "Hold " + RemoteKeys.keyName(code) + "  ·  now: " + (hold == null ? "same as a press" : RemoteKeys.describe(this, hold)));
+        addRow("Open an app", null, () -> openKeyApps(code, true), false);
+        addRow("Inputs", null, () -> setHold(code, RemoteKeys.INPUTS), false);
+        addRow("Talkies", null, () -> setHold(code, RemoteKeys.HOME), false);
+        if (hold != null) addRow("Same as a press", null, () -> setHold(code, null), false);
+        showMenu(420);
+    }
+
+    private void openKeyApps(int code) { openKeyApps(code, false); }
+
+    private void openKeyApps(int code, boolean hold) {
         beginMenu(settingsAt, "Open which app?");
-        for (AppEntry a : apps) addRow(a.label, null, () -> setKey(code, RemoteKeys.APP + a.pkg), false);
+        for (AppEntry a : apps) addRow(a.label, null, () -> {
+            if (hold) setHold(code, RemoteKeys.APP + a.pkg); else setKey(code, RemoteKeys.APP + a.pkg);
+        }, false);
         showMenu(360);
     }
 
@@ -2073,6 +2132,98 @@ public class HomeActivity extends Activity {
         RemoteKeys.set(this, code, action);
         Toast.makeText(this, RemoteKeys.keyName(code) + ": " + RemoteKeys.describe(this, action), Toast.LENGTH_SHORT).show();
         openRemoteKeys();
+    }
+
+    private void setHold(int code, String action) {
+        RemoteKeys.setHold(this, code, action);
+        Toast.makeText(this, "Hold " + RemoteKeys.keyName(code) + ": " + (action == null ? "same as a press"
+                : RemoteKeys.describe(this, action)), Toast.LENGTH_SHORT).show();
+        openRemoteKeys();
+    }
+
+    // ---------------------------------------------------------------- Bluetooth
+
+    /** "Off", "Sony WH-1000XM4" (connected), "2 paired" or "None paired", for Control Center's Bluetooth row. */
+    private void bluetoothStatus(java.util.function.Consumer<String> done) {
+        if (!Bluetooth.allowed(this)) { done.accept(null); return; }
+        if (!Bluetooth.on(this)) { done.accept("Off"); return; }
+        List<android.bluetooth.BluetoothDevice> paired = Bluetooth.speakers(this);
+        if (paired.isEmpty()) { done.accept("None paired"); return; }
+        Bluetooth.audio(this, a2dp -> {
+            for (android.bluetooth.BluetoothDevice d : paired) {
+                if (Bluetooth.state(a2dp, d) == android.bluetooth.BluetoothProfile.STATE_CONNECTED) { done.accept(Bluetooth.name(d)); return; }
+            }
+            done.accept(paired.size() + " paired");
+        });
+    }
+
+    /** Paired speakers and headphones: OK connects or disconnects one. Pairing a new one is the TV's job. */
+    private void openBluetooth() {
+        if (!Bluetooth.allowed(this)) {
+            requestPermissions(new String[]{android.Manifest.permission.BLUETOOTH_CONNECT}, REQ_BLUETOOTH);
+            return;
+        }
+        if (Bluetooth.adapter(this) == null) {
+            Toast.makeText(this, "This TV has no Bluetooth", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!Bluetooth.on(this)) {
+            // Android's own "Turn on Bluetooth?" question.
+            start(new Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE));
+            return;
+        }
+        Bluetooth.audio(this, a2dp -> {
+            List<android.bluetooth.BluetoothDevice> speakers = Bluetooth.speakers(this);
+            beginMenu(P_CONTROL, speakers.isEmpty() ? "Bluetooth  ·  no speakers or headphones paired"
+                    : "Bluetooth  ·  OK connects or disconnects");
+            for (android.bluetooth.BluetoothDevice d : speakers) {
+                final View[] row = new View[1];
+                row[0] = addRow(Bluetooth.name(d), btLabel(Bluetooth.state(a2dp, d)), () -> {
+                    boolean connect = Bluetooth.state(a2dp, d) != android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+                    if (!Bluetooth.connect(a2dp, d, connect)) {
+                        // Android refused (some TVs): its own Bluetooth page can do it.
+                        start(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+                        return;
+                    }
+                    setStatus(row[0], connect ? "Connecting…" : "Disconnecting…");
+                    watchBluetooth(row[0], a2dp, d, 0);
+                }, true);
+            }
+            addRow("Pair a new device", null, () -> start(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)), false);
+            showMenu(400);
+        });
+    }
+
+    /** Updates the row as the connection settles, for up to ~10 s. */
+    private void watchBluetooth(View row, android.bluetooth.BluetoothA2dp a2dp, android.bluetooth.BluetoothDevice d, int tries) {
+        root.postDelayed(() -> {
+            if (!row.isAttachedToWindow()) return;
+            int st = Bluetooth.state(a2dp, d);
+            boolean settling = st == android.bluetooth.BluetoothProfile.STATE_CONNECTING
+                    || st == android.bluetooth.BluetoothProfile.STATE_DISCONNECTING;
+            if (settling && tries < 10) { watchBluetooth(row, a2dp, d, tries + 1); return; }
+            if (tries < 3 && !settling) {
+                // Android may not have started yet: look a little longer before showing the outcome.
+                setStatus(row, btLabel(st));
+                watchBluetooth(row, a2dp, d, tries + 1);
+                return;
+            }
+            setStatus(row, btLabel(st));
+        }, 1000);
+    }
+
+    private static String btLabel(int state) {
+        switch (state) {
+            case android.bluetooth.BluetoothProfile.STATE_CONNECTED: return "Connected";
+            case android.bluetooth.BluetoothProfile.STATE_CONNECTING: return "Connecting…";
+            case android.bluetooth.BluetoothProfile.STATE_DISCONNECTING: return "Disconnecting…";
+            default: return "Not connected";
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(req, perms, results);
+        if (req == REQ_BLUETOOTH && Bluetooth.allowed(this)) openBluetooth();
     }
 
     // ---------------------------------------------------------------- network debugging
@@ -2373,6 +2524,8 @@ public class HomeActivity extends Activity {
     }
 
     // Ported from tv-vibehack's launcher (pr/control-center, MIT); see THIRD_PARTY_NOTICES.md.
+    private static final int REQ_BLUETOOTH = 7;
+
     private void openControlCenter() {
         beginMenu(P_CONTROL, "Control Center");
         final View[] timer = new View[1];
@@ -2387,6 +2540,9 @@ public class HomeActivity extends Activity {
         addRow("Network", networkName(), () -> start(new Intent(Settings.ACTION_WIFI_SETTINGS)), false);
         final View[] speed = new View[1];
         speed[0] = addRow("Speed test", lastSpeed, () -> runSpeedTest(speed[0]), true);
+        final View[] bt = new View[1];
+        bt[0] = addRow("Bluetooth", null, this::openBluetooth, false);
+        bluetoothStatus(st -> { if (bt[0].isAttachedToWindow()) setStatus(bt[0], st); });
         addRow("Sound output", soundbarConnected() ? "Soundbar" : "TV speakers", () -> {
             Intent i = new Intent().setClassName("com.android.tv.settings", "com.android.tv.settings.device.sound.SoundActivity");
             if (pm.resolveActivity(i, 0) == null) i = new Intent(Settings.ACTION_SOUND_SETTINGS);
@@ -2394,6 +2550,8 @@ public class HomeActivity extends Activity {
         }, false);
         addRow("Screensaver", null, () -> start(new Intent(Intent.ACTION_MAIN)
                 .setClassName("com.android.systemui", "com.android.systemui.Somnambulator")), false);
+        // The TV's own power menu, so it still asks before restarting.
+        addRow("Restart…", null, () -> { if (!SleepService.powerMenu()) needsTurnOffSetup(); }, false);
         addRow("Talkies settings", null, () -> openTalkiesSettings(P_CONTROL), false);
         showMenu(350);
     }
@@ -2450,6 +2608,18 @@ public class HomeActivity extends Activity {
         final View[] adb = new View[1];
         adb[0] = addRow("Network debugging", "Checking…", this::openNetworkDebugging, false);
         checkNetworkDebugging(st -> { if (adb[0].isAttachedToWindow()) setStatus(adb[0], st); });
+        final View[] wake = new View[1];
+        wake[0] = addRow("Talkies at power-on", wakeLabel(), () -> {
+            if (!SleepService.isRunning()) { needsTurnOffSetup(); return; }
+            prefs.edit().putString("home_at_power_on", SleepService.homeOnWake(this) ? "boot" : "always").apply();
+            setStatus(wake[0], wakeLabel());
+        }, true);
+        final View[] ports = new View[1];
+        ports[0] = addRow("Empty inputs", prefs.getBoolean("inputs_connected_only", false) ? "Under More inputs" : "Shown", () -> {
+            boolean only = !prefs.getBoolean("inputs_connected_only", false);
+            prefs.edit().putBoolean("inputs_connected_only", only).apply();
+            setStatus(ports[0], only ? "Under More inputs" : "Shown");
+        }, true);
         // Switch between Talkies and another launcher with Android's Home app chooser.
         addRow("Home app", currentHomeName(), () -> start(new Intent(Settings.ACTION_HOME_SETTINGS)), false);
         // Off by default: looking a video up means sending its title and channel to YouTube.
@@ -2463,6 +2633,9 @@ public class HomeActivity extends Activity {
         addRow("About", null, this::openAbout, false);
         showMenu(350);
     }
+
+    /** After a restart only (the default), or every time the TV wakes from standby too. */
+    private String wakeLabel() { return SleepService.homeOnWake(this) ? "Every time" : "After a restart"; }
 
     /** Credits for the data Talkies shows; TMDB's wording is what its terms ask for. */
     private void openAbout() {

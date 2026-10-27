@@ -8,8 +8,8 @@ android {
         minSdk 30          // the TV runs Android 11 (API 30)
         targetSdk 35
         // Each release: versionName as in CHANGELOG.md, versionCode one higher (Android installs only higher codes as updates).
-        versionCode 2
-        versionName '0.2.0'
+        versionCode 3
+        versionName '0.3.0'
     }
     buildTypes {
         release {

@@ -3,11 +3,22 @@
 Versions are numbered *major.minor.fix*. While Talkies is in beta they start with 0: a new minor number brings new
 features, a new fix number only fixes. The version shows in Talkies settings → About.
 
-## Unreleased
+## 0.3.0 — 28 October 2026
+
+### New
+- **Bluetooth in Control Center:** your paired speakers and headphones, with OK to connect or disconnect one.
+- **Restart…** in Control Center, through the TV's own power menu, so it still asks first.
+- **Talkies at power-on: Every time** (Talkies settings): Talkies also comes up when the TV wakes from standby, not
+  only after a restart, unless you press a button first.
+- **Hold jobs for remote keys:** a button with a job can do a second one when held.
+- **Empty inputs: Under More inputs** (Talkies settings): Inputs lists only ports with something plugged in.
 
 ### Changed
 - A new logo: a cinema ticket with a play button, on a warm dark background, for the app icon and the TV banner
   (it replaces the two glass cards from when Talkies was called Glass Home).
+- Menus are fully opaque, so nothing behind them shows through the text.
+- The ⚙ icon opens Android TV's own settings on TVs that hide the standard settings screen.
+- The README covers pairing with `adb pair` for TVs that only have Wireless debugging.
 
 ## 0.2.0 — 28 October 2026
 

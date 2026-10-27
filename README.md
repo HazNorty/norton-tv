@@ -7,7 +7,7 @@ A small, ad-free home screen for Android TV and Google TV: one calm screen, ligh
 launcher); it adapts to the TV's country (picks, cricket, °C or °F) and screen, but other TVs and countries haven't
 been tested.
 
-**Version 0.2.0** (beta). What changed in each version: [CHANGELOG.md](CHANGELOG.md).
+**Version 0.3.0** (beta). What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
 Talkies only replaces the home screen: it doesn't remove the TV maker's apps, ads services or tracking. To do that
 too, use [CleanYourTV](https://github.com/Gathin23/cleanyourtv) first; Talkies works alongside it.
@@ -57,7 +57,7 @@ app, under the screensaver or in standby. Coming back to the home screen fetches
 
 | | |
 |---|---|
-| **The TV** | Android TV or Google TV, **Android 11 (API 30) or newer**. The install script checks this before building. Built and tested on a OnePlus TV with Google TV; other TVs should work but haven't been tried. |
+| **The TV** | Android TV or Google TV, **Android 11 (API 30) or newer**. The install script checks this before building. Built and tested on a OnePlus TV with Google TV; other TVs should work but haven't been tried. Samsung, LG, Roku and other TVs that don't run Android can't use Talkies; CleanYourTV's [guide for those TVs](https://cleanyour.tv/not-android) turns off their tracking with the remote. |
 | **A computer** | On the same Wi-Fi as the TV. macOS or Linux run the scripts as they are; on Windows use WSL, or the commands under *Install by hand*. |
 | **Tools** | `adb` (Android platform tools), JDK 17, and the Android SDK command-line tools with platform 35. |
 
@@ -77,6 +77,15 @@ Gradle, so it takes a few minutes.
 1. **On the TV**, turn on developer options (Settings → Device Preferences → About → press **Build** seven times),
    then **USB debugging** / **Network debugging** in Developer options. Note the TV's IP address
    (Settings → Network & Internet → your Wi-Fi network), something like `192.168.0.105`.
+
+   **No Network debugging, only Wireless debugging?** Newer TVs (Android 11 and later) may only offer *Wireless
+   debugging*, which needs pairing once. Open it on the TV, choose **Pair device with pairing code**, and on the
+   computer run `adb pair` with the address and code it shows (the pairing port is different from the connect
+   port):
+   ```bash
+   adb pair 192.168.1.20:37123
+   ```
+   Then use the address and port shown under **Wireless debugging** itself (not 5555) in the steps below.
 
    > **Every `192.168.1.20` in this README is an example.** Put your own TV's address in its place; `:5555`
    > stays as it is (it's the port network debugging uses).
@@ -345,8 +354,10 @@ you set once is in **Talkies settings**, its last row.
 | Free up memory | Stops background apps (never system apps) and shows how much RAM came back |
 | Network | Shows the Wi-Fi name (or Ethernet); OK opens Wi-Fi settings |
 | Speed test | A few seconds' download from Cloudflare's speed test; shows e.g. "206 Mbps" |
+| Bluetooth | Shows the connected speaker or headphones. OK lists your paired ones: OK on one connects or disconnects it; **Pair a new device** opens the TV's Bluetooth settings. Bluetooth can't be turned off here, since many remotes use it |
 | Sound output | Shows TV speakers or Soundbar (HDMI ARC) and opens the TV's Sound settings |
 | Screensaver | Starts the TV's screensaver right away |
+| Restart… | Opens the TV's own power menu, which asks before restarting. On some TVs (OnePlus) that menu puts the TV to sleep after 10 seconds if you choose nothing; Back closes it |
 | Talkies settings | Opens Talkies settings (below) |
 
 ## Talkies settings
@@ -361,9 +372,11 @@ Control Center → **Talkies settings**, or **hold OK on the ⚙ icon** (a press
 | Football leagues | The leagues the Football row follows; see *Football* |
 | Channels | Choose which app channels show below the dock, and their order |
 | Hidden apps | Shown once you've hidden an app: the apps you hid; OK shows one again |
-| Remote keys | Give a remote button another job: open an app, Inputs, Talkies, or nothing. **Add a key**, press the button, choose. Navigation, OK, Back, Home, volume and power can't be changed |
+| Remote keys | Give a remote button another job: open an app, Inputs, Talkies, or nothing. **Add a key**, press the button, choose. Once it has a job, **When held** gives it a second one for holding it (over half a second). Navigation, OK, Back, Home, volume and power can't be changed |
 | Keys and location | Your TMDB key (picks), CricketData key (scores) and weather area. Type or paste each one; keys are tried with the service first and only saved if it accepts them. **Remove** clears one |
 | Network debugging | "On · port 5555" while computers on your network can control the TV over ADB (how Talkies was installed). **Turn off** (needs the permission below) or open Developer options; turning it on again is done in Developer options |
+| Talkies at power-on | **After a restart** (default), or **Every time**: also when the TV wakes from standby into the last HDMI input or app. Pressing a button as it wakes keeps what's on screen |
+| Empty inputs | **Shown** (default), or **Under More inputs**: Inputs lists only ports with something plugged in, and a More inputs row brings back the rest |
 | Home app | Shows the current home screen and opens Android's *Default home app* chooser (on Google TV the choice doesn't stick; see *Use another home screen*) |
 | Sharp YouTube pictures | Off by default. On: YouTube cards in Continue get YouTube's 1280-pixel thumbnails, looked up by title and channel |
 | About | Credits for the data and code Talkies uses |
@@ -548,6 +561,7 @@ adb -s "$TALKIES_TV" shell cmd package set-home-activity --user 0 com.techpp.gla
 
 | What you see | Why, and the fix |
 |---|---|
+| `adb connect` is **refused** and the TV has no *Network debugging* | Your TV uses *Wireless debugging*: pair once with `adb pair` (see *First-time setup*, step 1), then connect to the port Wireless debugging shows. |
 | `adb connect` says **No route to host** on a Mac | macOS's Local Network privacy is blocking your terminal. System Settings → Privacy & Security → Local Network → allow your terminal app, then try again. |
 | No **"Allow debugging?"** prompt on the TV, or `unauthorized` | `adb kill-server`, then `adb connect` again with the TV on and its home screen showing. Some TVs only show it after Network debugging is switched off and on. |
 | **Home opens Google TV** (or the TV's own launcher) | The Talkies accessibility service is off: switch it on in Settings → Device Preferences → Accessibility. A force stop turns it off; the `pm grant` under *Google Assistant* makes Talkies put it back. |
@@ -607,5 +621,7 @@ Ideas (no code; Talkies' own implementation):
 
 - The hold-OK menu (Move, Uninstall, App info), removing a card from Continue, and giving remote buttons a new job:
   [Plume](https://github.com/aradhyas8/Plume_Launcher). Remote keys also follow CleanYourTV's.
+- Bluetooth connect, Restart…, Talkies at power-on, Empty inputs and the settings fallback for TVs that hide the
+  standard settings screen: [CleanYourTV](https://github.com/Gathin23/cleanyourtv)'s launcher and add-ons.
 
 The Outfit typeface is © The Outfit Project Authors, licensed under the SIL Open Font License 1.1 (`OUTFIT-OFL.txt`).

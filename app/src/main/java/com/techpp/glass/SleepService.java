@@ -4,7 +4,10 @@ package com.techpp.glass;
 // Copyright (c) 2026 Gathin. See THIRD_PARTY_NOTICES.md.
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -38,7 +41,11 @@ import java.util.List;
  * those launchers and the Assistant.
  *
  * Keys: it filters Home (above), OK while the sleep warning is up ("15 more minutes"), and remote buttons you've
- * given a job in Control Center → Remote keys (RemoteKeys); every other key passes through untouched.
+ * given a job in Talkies settings → Remote keys (RemoteKeys); every other key passes through untouched. A button with a
+ * hold job does it when held for HOLD_MS, and its press job when let go sooner.
+ *
+ * With "Home at power-on: Always" set, Talkies also comes up each time the TV wakes from standby, unless you press a
+ * button first (an idea from CleanYourTV's power_on_home_always, MIT).
  * The sleep warning is a small card drawn as an accessibility overlay, so no "display over other apps" permission.
  * You switch it on yourself in Settings → Device Preferences → Accessibility; if a force stop switches it off,
  * ServiceRepair can put it back (see there).
@@ -55,7 +62,12 @@ public class SleepService extends AccessibilityService {
     private final java.util.Set<String> stockHomes = new java.util.HashSet<>();
     private final java.util.Set<String> stockPackages = new java.util.HashSet<>();
     private static final long ASSISTANT_GRACE_MS = 8_000, BOOT_WINDOW_MS = 2 * 60_000, REOPEN_GUARD_MS = 1_000;
-    private long assistantAt, openedAt;
+    private long assistantAt, openedAt, keyAt;
+    private static final long HOLD_MS = 600, WAKE_DELAY_MS = 800;
+    /** The held button's hold job, waiting for HOLD_MS; null once it ran or the button came up. */
+    private Runnable holding;
+    private boolean held;
+    private BroadcastReceiver screenOn;
     private final Handler main = new Handler(Looper.getMainLooper());
 
     /** Remote keys: the next button pressed is reported here instead of doing anything (null when not learning). */
@@ -66,6 +78,16 @@ public class SleepService extends AccessibilityService {
 
     static boolean lock() {
         return running != null && running.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);
+    }
+
+    /** The TV's own power menu (Restart, and Power off on most TVs); it asks before it acts. */
+    static boolean powerMenu() {
+        return running != null && running.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG);
+    }
+
+    /** Talkies settings → Home at power-on: "boot" (after a restart only) or "always" (every wake from standby). */
+    static boolean homeOnWake(Context c) {
+        return "always".equals(c.getSharedPreferences("home", MODE_PRIVATE).getString("home_at_power_on", "boot"));
     }
 
     /** Types {@code text} into JioHotstar's search box once it shows up. False if the service is off. */
@@ -82,11 +104,25 @@ public class SleepService extends AccessibilityService {
         ServiceRepair.connected(this, SleepService.class);
         // After a restart the Google TV home screen is up before this service binds: take over once.
         if (SystemClock.elapsedRealtime() < BOOT_WINDOW_MS) openHome();
+        // Waking from standby isn't a restart: the TV may bring back the last input or app. Registered always, so
+        // the setting works without restarting the service; the TV keeps this process up while the service runs.
+        if (screenOn == null) {
+            screenOn = new BroadcastReceiver() {
+                @Override public void onReceive(Context c, Intent i) {
+                    if (!homeOnWake(c)) return;
+                    long on = SystemClock.elapsedRealtime();
+                    // After the TV has put its last source back; not if you've already pressed a button.
+                    main.postDelayed(() -> { if (keyAt < on) openHome(); }, WAKE_DELAY_MS);
+                }
+            };
+            registerReceiver(screenOn, new IntentFilter(Intent.ACTION_SCREEN_ON));
+        }
     }
 
     @Override protected boolean onKeyEvent(KeyEvent event) {
         int code = event.getKeyCode();
         boolean up = event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled();
+        keyAt = SystemClock.elapsedRealtime();
         if (code == KeyEvent.KEYCODE_HOME) {
             // You chose a launcher you installed yourself (Projectivy…) as the home app: Home is its, not ours.
             if (otherLauncherChosen()) return false;
@@ -104,7 +140,22 @@ public class SleepService extends AccessibilityService {
         }
         String action = l == null ? RemoteKeys.action(this, code) : null;
         if (action == null) return false;
-        if (up) RemoteKeys.run(this, action);
+        String hold = RemoteKeys.holdAction(this, code);
+        if (hold == null) {
+            if (up) RemoteKeys.run(this, action);
+            return true;
+        }
+        // Held buttons repeat their down event: only the first starts the wait.
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            if (holding != null) main.removeCallbacks(holding);
+            held = false;
+            holding = () -> { holding = null; held = true; RemoteKeys.run(this, hold); };
+            main.postDelayed(holding, HOLD_MS);
+        } else if (event.getAction() == KeyEvent.ACTION_UP) {
+            if (holding != null) { main.removeCallbacks(holding); holding = null; }
+            if (up && !held) RemoteKeys.run(this, action);
+            held = false;
+        }
         return true;
     }
 
@@ -255,6 +306,10 @@ public class SleepService extends AccessibilityService {
         // Unbound while still running: you switched it off, so don't put it back (a force stop never gets here).
         ServiceRepair.disconnected(this, SleepService.class);
         hideWarning();
+        if (screenOn != null) {
+            try { unregisterReceiver(screenOn); } catch (RuntimeException ignored) { }
+            screenOn = null;
+        }
         running = null;
         return super.onUnbind(intent);
     }

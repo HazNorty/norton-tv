@@ -17,7 +17,9 @@ import java.util.TreeMap;
  * Remote keys (Control Center → Remote keys): a button on the remote given another job, e.g. the Netflix button
  * opening JioHotstar. SleepService, Talkies' accessibility service, sees the press before the TV does and does
  * the job instead; buttons with no job pass through untouched. Kept in the "remote_keys" preferences as
- * key code → action: "app:<package>", "inputs", "home" or "none". An idea from Plume and CleanYourTV.
+ * key code → action: "app:<package>", "inputs", "home" or "none" ("k<code>"), and the job for holding the button
+ * ("h<code>"), which only a button with a press job can have: a press with no job has to reach the TV untouched,
+ * and Talkies can't tell a press from a hold until the button is let go. An idea from Plume and CleanYourTV.
  */
 final class RemoteKeys {
     static final String INPUTS = "inputs", HOME = "home", NONE = "none", APP = "app:";
@@ -45,14 +47,24 @@ final class RemoteKeys {
     static String action(Context c, int code) { return prefs(c).getString("k" + code, null); }
 
     static void set(Context c, int code, String action) {
-        if (action == null) prefs(c).edit().remove("k" + code).apply();
+        // Back to normal drops the hold job too.
+        if (action == null) prefs(c).edit().remove("k" + code).remove("h" + code).apply();
         else prefs(c).edit().putString("k" + code, action).apply();
+    }
+
+    /** What holding the button does; null when holding it is the same as a press. */
+    static String holdAction(Context c, int code) { return prefs(c).getString("h" + code, null); }
+
+    static void setHold(Context c, int code, String action) {
+        if (action == null) prefs(c).edit().remove("h" + code).apply();
+        else prefs(c).edit().putString("h" + code, action).apply();
     }
 
     /** Key code → action, in key-code order. */
     static Map<Integer, String> all(Context c) {
         Map<Integer, String> out = new TreeMap<>();
         for (Map.Entry<String, ?> e : prefs(c).getAll().entrySet()) {
+            if (!e.getKey().startsWith("k")) continue;  // hold jobs
             try {
                 out.put(Integer.parseInt(e.getKey().substring(1)), String.valueOf(e.getValue()));
             } catch (RuntimeException ignored) {
