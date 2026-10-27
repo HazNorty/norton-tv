@@ -353,6 +353,18 @@ final class Cricket {
         }
     }
 
+    /** Whether CricketData takes this key (Keys.OK, REJECTED or OFFLINE), for Control Center. Uses one of its daily calls. */
+    static int check(String key) {
+        try {
+            fetch(key);
+            return Keys.OK;
+        } catch (IOException e) {
+            return String.valueOf(e.getMessage()).startsWith("API says") ? Keys.REJECTED : Keys.OFFLINE;
+        } catch (Exception e) {
+            return Keys.REJECTED;
+        }
+    }
+
     private static JSONObject fetch(String key) throws Exception {
         // cricScore: every current match (fixtures, live, results) in one request, with scores ready to show.
         HttpURLConnection c = (HttpURLConnection) new URL("https://api.cricapi.com/v1/cricScore?apikey=" + key).openConnection();

@@ -485,6 +485,19 @@ final class Trending {
         return String.format(Locale.US, "%04d-%02d-%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH));
     }
 
+    /** Whether TMDB takes this key (Keys.OK, REJECTED or OFFLINE), for Control Center. Blocking. */
+    static int check(String key) {
+        try {
+            get(key, "/configuration");
+            return Keys.OK;
+        } catch (IOException e) {
+            String m = String.valueOf(e.getMessage());
+            return m.startsWith("HTTP 401") || m.startsWith("HTTP 404") ? Keys.REJECTED : Keys.OFFLINE;
+        } catch (Exception e) {
+            return Keys.REJECTED;  // a malformed key (spaces, odd characters) doesn't even make a URL
+        }
+    }
+
     /** TMDB accepts either a v3 API key (query parameter) or a v4 read access token (Bearer header). */
     private static JSONObject get(String key, String path) throws Exception {
         boolean bearer = key.length() > 40;

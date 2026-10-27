@@ -92,9 +92,13 @@ Gradle, so it takes a few minutes.
    **notification access** for Talkies (Settings → Apps → Special app access). The first keeps Home on Talkies
    and powers Turn off, Remote keys and the sleep warning; the second powers Continue and the update bell.
 7. **Optional extras:**
-   - Picks: a free [TMDB](https://www.themoviedb.org/settings/api) key → `./set-tmdb-key.sh`
-   - Cricket: a free [CricketData.org](https://cricketdata.org) key → `./set-cricket-key.sh`
-   - Weather: `./set-location.sh "your area"` (or `"lat,lon"`)
+   - Picks: a free [TMDB](https://www.themoviedb.org/settings/api) key
+   - Cricket: a free [CricketData.org](https://cricketdata.org) key
+   - Weather: your area (`"Camden, London"`) or `"lat,lon"`
+
+   Enter all three on the TV in Control Center → **Keys and location** (each key is checked before it's saved; the
+   Google TV app on your phone has a keyboard that can paste them), or from the computer with `./set-tmdb-key.sh`,
+   `./set-cricket-key.sh` and `./set-location.sh "your area"`.
    - Accessibility restored after a force stop: the `pm grant` under *Google Assistant and the Google TV launcher*
    - Sharp YouTube pictures: Control Center → **Sharp YouTube pictures** (off by default; see *Continue*)
 
@@ -321,6 +325,7 @@ Go up to the icon buttons and choose the first one (sliders).
 | For You | Shown or Hidden. Hidden removes the tabs and picks (the weather, time and date stay), Up from the dock goes to the icons, and TMDB picks aren't fetched |
 | Channels | Choose which app channels show below the dock, and their order |
 | Remote keys | Give a remote button another job: open an app, Inputs, Talkies, or nothing. **Add a key**, press the button, choose. Navigation, OK, Back, Home, volume and power can't be changed |
+| Keys and location | Your TMDB key (picks), CricketData key (scores) and weather area. Type or paste each one; keys are tried with the service first and only saved if it accepts them. **Remove** clears one |
 | Network debugging | "On · port 5555" while computers on your network can control the TV over ADB (how Talkies was installed). **Turn off** (needs the permission below) or open Developer options; turning it on again is done in Developer options |
 | Sharp YouTube pictures | Off by default. On: YouTube cards in Continue get YouTube's 1280-pixel thumbnails, looked up by title and channel |
 | About | Credits for the data and code Talkies uses |

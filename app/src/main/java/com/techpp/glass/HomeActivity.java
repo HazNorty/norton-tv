@@ -1806,6 +1806,105 @@ public class HomeActivity extends Activity {
         return name;
     }
 
+    // ---------------------------------------------------------------- keys and location
+
+    /**
+     * Control Center → Keys and location: your own TMDB key (picks), CricketData key (scores) and weather area, typed
+     * with the remote or pasted from a phone with the Google TV app's keyboard. Keys are tried before they're saved.
+     * They go in the same files the set-*.sh scripts push over adb (see Keys).
+     */
+    private void openKeysAndLocation(int focus) {
+        beginMenu(P_CONTROL, "Keys and location");
+        String tmdb = Keys.read(this, Keys.TMDB), cricket = Keys.read(this, Keys.CRICKET), area = Keys.read(this, Keys.LOCATION);
+        String paste = "\n\nTip: the Google TV app on your phone has a keyboard that can paste it.";
+        addRow("TMDB key", tmdb == null ? "Not set" : Keys.masked(tmdb), () -> askText("TMDB key",
+                "For the Trending and New picks. Free at themoviedb.org → Settings → API: the API Key or the API Read "
+                        + "Access Token." + paste, null, true, tmdb != null, text -> saveKey(Keys.TMDB, "TMDB", text, 0)), true);
+        addRow("Cricket key", cricket == null ? "Not set" : Keys.masked(cricket), () -> askText("CricketData key",
+                "For live cricket scores. Free at cricketdata.org (100 requests a day, enough for Talkies)." + paste,
+                null, true, cricket != null, text -> saveKey(Keys.CRICKET, "CricketData", text, 1)), true);
+        // Coordinates pinpoint a home, so the row (and any screenshot of it) just says so; place names show as typed.
+        String where = area == null ? "Not set" : area.matches("[-+0-9.,\\s]+") ? "Coordinates"
+                : area.length() > 22 ? area.substring(0, 21) + "…" : area;
+        addRow("Weather location", where,
+                () -> askText("Weather location", "A town or area, like \"Camden, London\", or latitude,longitude, like "
+                        + "\"51.54,-0.14\".", area, false, area != null, this::saveLocation), true);
+        showMenu(420);
+        focusMenu(focus);
+    }
+
+    /** A one-line text box over the home screen. Save hands back the text; Remove (or saving it empty) hands back "". */
+    private void askText(String title, String help, String current, boolean code, boolean canRemove,
+                         java.util.function.Consumer<String> onSave) {
+        android.widget.EditText field = new android.widget.EditText(this);
+        field.setSingleLine(true);
+        field.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                | (code ? android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD : 0));
+        if (current != null) {
+            field.setText(current);
+            field.setSelection(current.length());
+        }
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(px(20), px(4), px(20), 0);
+        box.addView(field);
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(title).setMessage(help).setView(box)
+                .setPositiveButton("Save", (d, w) -> onSave.accept(field.getText().toString().trim()))
+                .setNegativeButton("Cancel", null);
+        if (canRemove) b.setNeutralButton("Remove", (d, w) -> onSave.accept(""));
+        android.app.AlertDialog dialog = b.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+        dialog.show();
+        field.requestFocus();
+    }
+
+    /** Tries the key with the service first: a key it turns down isn't saved; one that can't be checked offline is. */
+    private void saveKey(String file, String service, String text, int row) {
+        if (text.isEmpty()) {
+            Keys.write(this, file, null);
+            Toast.makeText(this, service + " key removed", Toast.LENGTH_SHORT).show();
+            if (zone == Z_MENU) openKeysAndLocation(row);
+            return;
+        }
+        String key = text.replaceAll("\\s", "");
+        Toast.makeText(this, "Checking the key with " + service + "…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            int result = file.equals(Keys.TMDB) ? Trending.check(key) : Cricket.check(key);
+            runOnUiThread(() -> {
+                if (result == Keys.REJECTED) {
+                    Toast.makeText(this, service + " didn't accept that key, so it wasn't saved", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if (!Keys.write(this, file, key)) {
+                    Toast.makeText(this, "Couldn't save the key", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                Toast.makeText(this, result == Keys.OK
+                        ? "The key works. " + (file.equals(Keys.TMDB) ? "Picks arrive" : "Scores arrive") + " in a minute"
+                        : "Couldn't reach " + service + " to check it. Saved; Talkies will try it later", Toast.LENGTH_LONG).show();
+                if (zone == Z_MENU) openKeysAndLocation(row);
+                refreshOnline();
+            });
+        }, "KeyCheck").start();
+    }
+
+    private void saveLocation(String text) {
+        if (!Keys.write(this, Keys.LOCATION, text)) {
+            Toast.makeText(this, "Couldn't save the location", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (text.isEmpty()) {
+            weatherLine = null;
+            updateInfo();
+        }
+        Toast.makeText(this, text.isEmpty() ? "Weather location removed" : "Saved. The weather appears in a moment",
+                Toast.LENGTH_SHORT).show();
+        if (zone == Z_MENU) openKeysAndLocation(2);
+        refreshOnline();
+    }
+
     // ---------------------------------------------------------------- remote keys
 
     /** One row per button with a job ("Prog Red → Open JioHotstar"), then Add a key. */
@@ -2112,6 +2211,7 @@ public class HomeActivity extends Activity {
         addRow("Channels", null, this::openChannelsEditor, false);
         addRow("Remote keys", RemoteKeys.all(this).isEmpty() ? null : RemoteKeys.all(this).size() + " set",
                 this::openRemoteKeys, false);
+        addRow("Keys and location", null, () -> openKeysAndLocation(0), false);
         final View[] adb = new View[1];
         adb[0] = addRow("Network debugging", "Checking…", this::openNetworkDebugging, false);
         checkNetworkDebugging(st -> { if (adb[0].isAttachedToWindow()) setStatus(adb[0], st); });
