@@ -155,9 +155,9 @@ with your own computer's debug key, so a build from another computer can't insta
 | Icon buttons | — | Tabs (or the dock when there are no picks) | Next button; stops at the ends | Open | Dock |
 | Tabs | Icon buttons | Picks | Switch tab; stops at the ends | Picks | Dock |
 | Picks | Tabs | Dock | Next pick (it grows, the row slides); stops at the ends | Open it | Dock |
-| Dock | Picks (or the icon buttons) | First channel (or All apps) | Next app; stops at the ends | Launch (hold: Move, Uninstall, App info) | — |
+| Dock | Picks (or the icon buttons) | First channel (or All apps) | Next app; stops at the ends | Launch (hold: dock, Move, Hide, Uninstall, App info) | — |
 | Channels | Row above (the dock from the first) | Row below (All apps after the last) | Next card; the row slides | Open that title | Dock |
-| All apps | One row up (the last channel from the top row) | One row down | Next app in the row | Launch (hold: Move, Uninstall, App info) | Dock |
+| All apps | One row up (the last channel from the top row) | One row down | Next app in the row | Launch (hold: dock, Move, Hide, Uninstall, App info) | Dock |
 | Inputs / Control Center | Previous | Next | Close | Choose | Close |
 
 **Home** always brings you back to the dock, at the top, on the Trending tab.
@@ -358,6 +358,7 @@ Control Center → **Talkies settings**, or **hold OK on the ⚙ icon** (a press
 | Live scores | Cricket and football (default), Cricket, Football or Off: what the score line and the score rows show |
 | Football leagues | The leagues the Football row follows; see *Football* |
 | Channels | Choose which app channels show below the dock, and their order |
+| Hidden apps | Shown once you've hidden an app: the apps you hid; OK shows one again |
 | Remote keys | Give a remote button another job: open an app, Inputs, Talkies, or nothing. **Add a key**, press the button, choose. Navigation, OK, Back, Home, volume and power can't be changed |
 | Keys and location | Your TMDB key (picks), CricketData key (scores) and weather area. Type or paste each one; keys are tried with the service first and only saved if it accepts them. **Remove** clears one |
 | Network debugging | "On · port 5555" while computers on your network can control the TV over ADB (how Talkies was installed). **Turn off** (needs the permission below) or open Developer options; turning it on again is done in Developer options |
@@ -440,8 +441,14 @@ request and set when the Auto appearance switches between light and dark.
 
 **Hold OK** (about half a second) on:
 
-- **An app** in the dock or All apps: **Move** (below), **Uninstall**, **App info**. Uninstall opens Android's own
-  "Uninstall this app?" dialog, and only shows for apps you installed (not system apps or Talkies).
+- **An app** in the dock or All apps:
+  - **Add to dock** (from All apps): it takes the dock's last spot, and the app that was there moves to the front of
+    All apps. **Remove from dock** does the opposite: the first app in All apps takes its spot.
+  - **Move** (below), to place it exactly.
+  - **Hide**: it leaves the dock and All apps but stays installed (voice search and Settings still open it).
+    Talkies settings → **Hidden apps** lists them; OK shows one again, at the end of All apps.
+  - **Uninstall** opens Android's own "Uninstall this app?" dialog, and only shows for apps you installed (not system
+    apps or Talkies). **App info** opens the app's page in Settings.
 - **A Continue card** (the Continue tab or the Watch Next row): **Remove from Continue**, or **Open** the app itself
   rather than the episode. A removed title stays out until the app reports a new episode of it.
 

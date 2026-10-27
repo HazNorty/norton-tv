@@ -508,10 +508,10 @@ public class HomeActivity extends Activity {
     private void loadApps() {
         Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
         List<AppEntry> all = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        Set<String> seen = new HashSet<>(), hidden = hiddenApps();
         for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
             String p = ri.activityInfo.packageName;
-            if (p.equals(getPackageName())) continue;
+            if (p.equals(getPackageName()) || hidden.contains(p)) continue;
             Intent main = pm.getLeanbackLaunchIntentForPackage(p);
             // Some apps expose several TV entries (e.g. input shortcuts); keep the main one.
             if (main != null && main.getComponent() != null
@@ -2141,13 +2141,100 @@ public class HomeActivity extends Activity {
         beginMenu(P_CONTROL, a.label);
         menuTile = tile;
         menuClosed = () -> { if (z == Z_DOCK) focusDock(di); else focusGrid(gi); };
+        boolean inDock = ai < dockCount, anyOutside = apps.size() > dockCount;
+        if (!inDock) addRow("Add to dock", null, () -> addToDock(a.pkg), false);
+        else if (anyOutside) addRow("Remove from dock", null, () -> removeFromDock(a.pkg), false);
         addRow("Move", null, this::startMove, false);
+        addRow("Hide", null, () -> hideApp(a.pkg), false);
         if (canUninstall(a.pkg)) {
             addRow("Uninstall", null, () -> start(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + a.pkg))), false);
         }
         addRow("App info", null, () -> start(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + a.pkg))), false);
         showMenu(240);
+    }
+
+    // ---------------------------------------------------------------- dock and hidden apps
+
+    private int indexOf(String pkg) {
+        for (int i = 0; i < apps.size(); i++) if (apps.get(i).pkg.equals(pkg)) return i;
+        return -1;
+    }
+
+    /** From All apps into the dock's last spot; the app that was there goes to the front of All apps. */
+    private void addToDock(String pkg) {
+        int ai = indexOf(pkg);
+        if (ai < dockCount || dockCount == 0) return;
+        AppEntry app = apps.remove(ai), last = apps.remove(dockCount - 1);
+        apps.add(dockCount - 1, app);
+        apps.add(dockCount, last);
+        saveOrder();
+        buildAppViews();
+        root.post(() -> focusDock(dockCount - 1));
+        Toast.makeText(this, app.label + " is in the dock; " + last.label + " moved to All apps", Toast.LENGTH_SHORT).show();
+    }
+
+    /** Out of the dock to the front of All apps; the first app in All apps takes its spot. */
+    private void removeFromDock(String pkg) {
+        int ai = indexOf(pkg);
+        if (ai < 0 || ai >= dockCount || apps.size() <= dockCount) return;
+        AppEntry app = apps.remove(ai), next = apps.remove(dockCount - 1);
+        apps.add(ai, next);
+        apps.add(dockCount, app);
+        saveOrder();
+        buildAppViews();
+        root.post(() -> focusDock(ai));
+        Toast.makeText(this, app.label + " moved to All apps; " + next.label + " is in the dock", Toast.LENGTH_SHORT).show();
+    }
+
+    /** Apps you hid (Hide in an app's hold-OK menu): left out of the dock and All apps, still installed. */
+    private Set<String> hiddenApps() {
+        String s = prefs.getString("hidden_apps", "");
+        return s.isEmpty() ? new HashSet<>() : new HashSet<>(Arrays.asList(s.split(",")));
+    }
+
+    private void setHidden(String pkg, boolean hide) {
+        Set<String> h = hiddenApps();
+        if (hide) h.add(pkg); else h.remove(pkg);
+        prefs.edit().putString("hidden_apps", String.join(",", h)).apply();
+    }
+
+    /** Hides the app; in the dock, the first app in All apps takes its spot. */
+    private void hideApp(String pkg) {
+        int ai = indexOf(pkg);
+        if (ai < 0) return;
+        AppEntry app = apps.remove(ai);
+        if (ai < dockCount && apps.size() >= dockCount) apps.add(ai, apps.remove(dockCount - 1));
+        saveOrder();
+        setHidden(pkg, true);
+        reloadApps();
+        Toast.makeText(this, app.label + " hidden. Talkies settings → Hidden apps brings it back", Toast.LENGTH_LONG).show();
+    }
+
+    /** Talkies settings → Hidden apps: OK on one shows it again (at the end of All apps). */
+    private void openHiddenApps() {
+        beginMenu(settingsAt, "Hidden apps  ·  OK shows it again");
+        List<String> pkgs = new ArrayList<>(hiddenApps());
+        List<String[]> rows = new ArrayList<>();
+        for (String p : pkgs) {
+            try {
+                rows.add(new String[]{p, String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(p, 0)))});
+            } catch (PackageManager.NameNotFoundException e) {
+                setHidden(p, false);  // uninstalled since: forget it
+            }
+        }
+        rows.sort((x, y) -> x[1].compareToIgnoreCase(y[1]));
+        for (String[] r : rows) {
+            final View[] row = new View[1];
+            row[0] = addRow(r[1], "Hidden", () -> {
+                boolean nowHidden = !hiddenApps().contains(r[0]);
+                setHidden(r[0], nowHidden);
+                setStatus(row[0], nowHidden ? "Hidden" : "Shown");
+                reloadApps();
+            }, true);
+        }
+        if (rows.isEmpty()) addRow("No hidden apps", null, () -> { }, true);
+        showMenu(360);
     }
 
     /** System apps (and Talkies) can't be uninstalled from here; Android's own dialog asks before removing one. */
@@ -2355,6 +2442,8 @@ public class HomeActivity extends Activity {
         if (!scores().equals("off") && !scores().equals("cricket")) addRow("Football leagues", football.leagues().size() + " on",
                 () -> openFootballLeagues(0), false);
         addRow("Channels", null, this::openChannelsEditor, false);
+        int hiddenCount = hiddenApps().size();
+        if (hiddenCount > 0) addRow("Hidden apps", String.valueOf(hiddenCount), this::openHiddenApps, false);
         addRow("Remote keys", RemoteKeys.all(this).isEmpty() ? null : RemoteKeys.all(this).size() + " set",
                 this::openRemoteKeys, false);
         addRow("Keys and location", null, () -> openKeysAndLocation(0), false);
