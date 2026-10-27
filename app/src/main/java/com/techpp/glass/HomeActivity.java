@@ -133,6 +133,8 @@ public class HomeActivity extends Activity {
     private Weather weather;
     private Cricket cricket;
     private Football football;
+    private Calendars calendars;
+    private List<Calendars.Event> calendarEvents = new ArrayList<>();
     private List<Cricket.Match> matches = new ArrayList<>(), footballMatches = new ArrayList<>();
     private List<Channels.Channel> appChannels = new ArrayList<>();  // the shown app channels, without Cricket
     private TextView score;
@@ -260,6 +262,7 @@ public class HomeActivity extends Activity {
         weather = new Weather(this);
         cricket = new Cricket(this);
         football = new Football(this);
+        calendars = new Calendars(this);
         score = findViewById(R.id.score);
         weatherLine = weather.cached();
         day = isDayNow();
@@ -478,6 +481,11 @@ public class HomeActivity extends Activity {
         showChannels(appChannels);  // while you're moving through the rows it waits for the remote to go still
     }
 
+    private void onCalendar(List<Calendars.Event> list) {
+        calendarEvents = list;
+        showChannels(appChannels);  // while you're moving through the rows it waits for the remote to go still
+    }
+
     private void onFootball(List<Cricket.Match> list) {
         footballMatches = list;
         updateScore();
@@ -665,6 +673,7 @@ public class HomeActivity extends Activity {
     private void showChannels(List<Channels.Channel> apps) {
         List<Channels.Channel> list = new ArrayList<>();
         List<Cricket.Match> cricketRow = cricketShown(), footballRow = footballShown();
+        if (calendars.configured()) list.add(todayRow());  // Norton TV: the calendars come first, under the dock
         // The row with a match being played goes first: Football above Cricket while only football is live.
         boolean footballFirst = !footballRow.isEmpty() && footballRow.get(0).live
                 && (cricketRow.isEmpty() || !cricketRow.get(0).live);
@@ -714,6 +723,7 @@ public class HomeActivity extends Activity {
 
     /** What a card shows, unchanged by a new score: the match, or the pick itself. */
     private static String cardKey(Trending.Pick p) {
+        if (p.extra instanceof Calendars.Event) return ((Calendars.Event) p.extra).id();
         return p.extra instanceof Cricket.Match ? ((Cricket.Match) p.extra).id : String.valueOf(p.id);
     }
 
@@ -850,11 +860,101 @@ public class HomeActivity extends Activity {
     }
 
     /** Cricket cards are wider: a Test's scores ("425/9d & 84/1 (25)") need the room. */
-    private static int cardW(Channels.Channel ch) { return isScores(ch) ? CRICKET_W : CH_W; }
+    private static int cardW(Channels.Channel ch) { return isScores(ch) || "today".equals(ch.key) ? CRICKET_W : CH_W; }
+
+    /** Norton TV's Today row: today's and tomorrow's events from the calendars, or one "Nothing today" card. */
+    private Channels.Channel todayRow() {
+        Channels.Channel c = new Channels.Channel();
+        c.key = "today";
+        c.name = "Today";
+        boolean anyTomorrow = false;
+        for (Calendars.Event e : calendarEvents) {
+            Trending.Pick p = new Trending.Pick();
+            p.kind = "today";
+            p.extra = e;
+            p.id = e.id().hashCode();
+            p.title = e.title;
+            boolean tomorrow = !e.day.equals(java.time.LocalDate.now());
+            anyTomorrow |= tomorrow;
+            p.meta = (tomorrow ? "Tomorrow" : "Today") + " · " + eventTime(e) + " · " + e.calendar;
+            c.items.add(p);
+        }
+        boolean anyToday = !calendarEvents.isEmpty() && calendarEvents.get(0).day.equals(java.time.LocalDate.now());
+        if (!anyToday) {
+            Trending.Pick p = new Trending.Pick();
+            p.kind = "today";
+            p.extra = "Nothing today";
+            p.id = 1;
+            p.title = "Nothing today";
+            p.meta = anyTomorrow ? "Tomorrow's plans are next" : "Nothing tomorrow either";
+            c.items.add(0, p);
+        }
+        c.title = anyTomorrow ? "Today and tomorrow" : "Today";
+        return c;
+    }
+
+    /** "All day", "14:30" or "14:30 – 15:30" (12-hour when the TV is set that way). */
+    private String eventTime(Calendars.Event e) {
+        if (e.allDay) return "All day";
+        String f = DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mma";
+        java.time.format.DateTimeFormatter t = java.time.format.DateTimeFormatter.ofPattern(f, java.util.Locale.UK);
+        String s = e.start.format(t).toLowerCase(java.util.Locale.UK);
+        return e.end.isAfter(e.start) && e.end.toLocalDate().equals(e.start.toLocalDate())
+                ? s + " – " + e.end.format(t).toLowerCase(java.util.Locale.UK) : s;
+    }
+
+    /** A calendar card: the calendar's colour down the left, the time, the title, and whose calendar. */
+    private View calendarCard(Trending.Pick p) {
+        FrameLayout card = new FrameLayout(this);
+        card.setBackground(rounded(theme.tileBg, 0, 10));
+        final float r = px(10);
+        card.setOutlineProvider(new ViewOutlineProvider() {
+            @Override public void getOutline(View v, Outline o) { o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), r); }
+        });
+        card.setClipToOutline(true);
+        Calendars.Event e = p.extra instanceof Calendars.Event ? (Calendars.Event) p.extra : null;
+        int colour = e != null ? e.colour : theme.text2;
+        View bar = new View(this);
+        bar.setBackgroundColor(colour);
+        card.addView(bar, new FrameLayout.LayoutParams(px(4), ViewGroup.LayoutParams.MATCH_PARENT));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(px(16), px(11), px(12), px(10));
+        TextView when = new TextView(this);
+        when.setText(e == null ? "" : (e.day.equals(java.time.LocalDate.now()) ? "" : "Tomorrow  ·  ") + eventTime(e));
+        when.setTextColor(colour);
+        when.setTextSize(12);
+        when.setTypeface(getResources().getFont(R.font.outfit));
+        when.setFontVariationSettings("'wght' 600");
+        when.setSingleLine(true);
+        col.addView(when);
+        TextView what = new TextView(this);
+        what.setText(p.title);
+        what.setTextColor(theme.text);
+        what.setTextSize(15);
+        what.setTypeface(getResources().getFont(R.font.outfit));
+        what.setFontVariationSettings("'wght' 500");
+        what.setMaxLines(2);
+        what.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        wl.topMargin = px(3);
+        col.addView(what, wl);
+        TextView who = new TextView(this);
+        who.setText(e == null ? (p.meta == null ? "" : p.meta) : e.calendar);
+        who.setTextColor(theme.text2);
+        who.setTextSize(11.5f);
+        who.setTypeface(getResources().getFont(R.font.outfit));
+        who.setSingleLine(true);
+        col.addView(who);
+        card.addView(col, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        card.setContentDescription(p.title);
+        return card;
+    }
 
     /** A card in a channel row: its artwork (loaded in the background), or the app's banner and the title. */
     private View channelCard(Trending.Pick p) {
         if (p.extra instanceof Cricket.Match) return cricketCard((Cricket.Match) p.extra);
+        if ("today".equals(p.kind)) return calendarCard(p);
         FrameLayout card = new FrameLayout(this);
         card.setBackground(rounded(theme.tileBg, 0, 10));
         final float r = px(10);
@@ -2900,7 +3000,9 @@ public class HomeActivity extends Activity {
         refreshOnline();
         background.execute(() -> {
             List<Cricket.Match> saved = cricket.cached(), savedFootball = football.cached();
+            List<Calendars.Event> savedEvents = calendars.cached();
             runOnUiThread(() -> {
+                onCalendar(savedEvents);
                 if (matches.isEmpty() && !saved.isEmpty()) onMatches(saved);
                 if (footballMatches.isEmpty() && !savedFootball.isEmpty()) onFootball(savedFootball);
                 refreshOnline();
@@ -2967,6 +3069,7 @@ public class HomeActivity extends Activity {
         }
         if (!scores().equals("off") && !scores().equals("football")) cricket.refreshIfStale(this::onMatches);
         if (scores().equals("both") || scores().equals("football")) football.refreshIfStale(this::onFootball);
+        calendars.refreshIfStale(this::onCalendar);
         weather.refreshIfStale(this::onWeather);
         if (forYou) trending.refreshIfStale(this::onPicks);
         if (prefs.getBoolean("youtube_art", false)) RecentStore.upgradeArtwork(this, () -> {
