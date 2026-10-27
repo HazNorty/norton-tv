@@ -98,7 +98,11 @@ final class Football {
     private final Handler main = new Handler(Looper.getMainLooper());
     private boolean running, teamRunning;
 
+    /** Kick-off times follow the TV's clock: "16:30" on a 24-hour TV, "4:30 pm" otherwise. */
+    private static boolean h24;
+
     Football(Context c) {
+        h24 = android.text.format.DateFormat.is24HourFormat(c);
         ctx = c.getApplicationContext();
         dir = new File(c.getExternalFilesDir(null), "football");
         prefs = c.getSharedPreferences("football", Context.MODE_PRIVATE);
@@ -420,7 +424,7 @@ final class Football {
         m.status = o.optString("status");
         m.name = m.full1 + " v " + m.full2;
         m.start = m.live || m.ended ? null
-                : new SimpleDateFormat("h:mm a", Locale.US).format(new Date(o.optLong("at"))).toLowerCase(Locale.ROOT);
+                : new SimpleDateFormat(h24 ? "HH:mm" : "h:mm a", Locale.US).format(new Date(o.optLong("at"))).toLowerCase(Locale.ROOT);
         if (!m.live && !m.ended && m.status.isEmpty()) {
             // Not today: say which day ("Sat 4:30 pm").
             SimpleDateFormat day = new SimpleDateFormat("yyyyMMdd", Locale.US);

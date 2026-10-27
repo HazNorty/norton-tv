@@ -481,7 +481,9 @@ public class HomeActivity extends Activity {
                 // "Next  ·  Liverpool (A)  ·  Sun 4:30 pm  ·  EPL": who Arsenal play, where, and when.
                 boolean home = Football.TEAM.equals(m.short1);
                 String other = home ? m.t2 : m.t1;
-                b.append("Next  ·  ").append(other).append(home ? " (H)" : " (A)")
+                b.append("Next");
+                b.setSpan(new ForegroundColorSpan(TEAM_RED), 0, 4, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                b.append("  ·  ").append(other).append(home ? " (H)" : " (A)")
                         .append(m.start == null ? "" : "  ·  " + m.start).append("  ·  ").append(m.league);
             } else if (!m.ended) {
                 b.append(m.league).append("  ·  ").append(m.short1).append(" v ").append(m.short2)
@@ -588,7 +590,9 @@ public class HomeActivity extends Activity {
         Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
         List<AppEntry> all = new ArrayList<>();
         Set<String> seen = new HashSet<>(), hidden = hiddenApps();
-        boolean players = PlayerActivity.available(pm);
+        // A file named players_preview in the app's files folder shows the tiles on a TV without Sony's launcher
+        // (an emulator, for design work); pressing one there just says the player isn't available.
+        boolean players = PlayerActivity.available(pm) || new File(getExternalFilesDir(null), "players_preview").isFile();
         for (ResolveInfo ri : pm.queryIntentActivities(q, PackageManager.GET_META_DATA)) {
             String p = ri.activityInfo.packageName;
             if (p.equals(getPackageName())) {
@@ -976,7 +980,7 @@ public class HomeActivity extends Activity {
             p.extra = HUE_LINK;
             p.id = hue.linking() ? 2 : 1;
             p.title = hue.linking() ? "Press the bridge button" : "Link your Hue lights";
-            p.meta = hue.linking() ? "The round button on top of the Hue Bridge" : "Press OK, then the button on the Hue Bridge";
+            p.meta = hue.linking() ? "The round button on top of the bridge" : "Press OK to start";
             c.items.add(p);
             c.title = "Lights";
             return c;
@@ -1031,11 +1035,10 @@ public class HomeActivity extends Activity {
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(px(16), px(12), px(12), px(10));
-        TextView dot = new TextView(this);
-        dot.setText(l == null ? "◎" : lit ? "●" : "○");
-        dot.setTextSize(13);
-        dot.setTextColor(lit ? 0xFFFFD27A : theme.text2);
-        col.addView(dot);
+        ImageView bulb = new ImageView(this);
+        bulb.setImageResource(R.drawable.ic_bulb);
+        bulb.setImageTintList(ColorStateList.valueOf(lit ? 0xFF5A3A0C : theme.text2));
+        col.addView(bulb, new LinearLayout.LayoutParams(px(20), px(20)));
         TextView name = new TextView(this);
         name.setText(p.title);
         name.setTextColor(lit ? 0xFF2B1B05 : theme.text);
@@ -1689,6 +1692,9 @@ public class HomeActivity extends Activity {
         // Slide the row so the focused card sits at the left, like Projectivy.
         if (chanIdx < chanSprings.size()) chanSprings.get(chanIdx).target = px(col * (cardW(chanRows.get(chanIdx)) + CH_GAP));
         startMotion();
+        // Calendar and Lights cards already carry their words: no caption under them.
+        String focusedKind = items.get(col).kind;
+        boolean selfLabelled = "today".equals(focusedKind) || "light".equals(focusedKind);
         for (int i = 0; i < channelsBox.getChildCount(); i++) {
             View caption = channelsBox.getChildAt(i).findViewWithTag("caption");
             if (caption == null) continue;
@@ -1697,7 +1703,7 @@ public class HomeActivity extends Activity {
                 ((TextView) caption.findViewWithTag("name")).setText(p.title);
                 ((TextView) caption.findViewWithTag("meta")).setText(p.meta);
             }
-            caption.animate().alpha(i == chanIdx ? 1f : 0f).setDuration(160).start();
+            caption.animate().alpha(i == chanIdx && !selfLabelled ? 1f : 0f).setDuration(160).start();
         }
         setFocus(chanCards.get(chanIdx).get(col), 1.06f, 10);
         updateAmbient();

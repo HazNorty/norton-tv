@@ -110,9 +110,11 @@ final class AppEntry {
         android.graphics.Paint text = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         text.setColor(Color.WHITE);
         text.setTypeface(font != null ? font : android.graphics.Typeface.DEFAULT_BOLD);
-        text.setFakeBoldText(font != null);
+        if (font != null) text.setFontVariationSettings("'wght' 640");  // Outfit is variable: a confident semibold
+        text.setLetterSpacing(-0.01f);
         text.setTextAlign(android.graphics.Paint.Align.CENTER);
-        text.setTextSize(bannerH * 0.22f);
+        text.setTextSize(bannerH * 0.24f);
+        text.setShadowLayer(bannerH * 0.04f, 0, bannerH * 0.01f, 0x40000000);
         float max = bannerW * 0.82f;
         if (text.measureText(label) > max) text.setTextSize(text.getTextSize() * max / text.measureText(label));
         android.graphics.Paint.FontMetrics fm = text.getFontMetrics();
