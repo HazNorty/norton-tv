@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Talkies</string>
+    <string name="app_name">Norton TV</string>
     <string name="sleep_service_label">Talkies</string>
     <string name="sleep_service_description">Keeps Talkies as your home screen (the Home button opens it, and it opens over the Google TV home screen, except right after the Assistant shows results there), puts the TV in standby for Turn off now and the sleep timer, and types a cricket match into JioHotstar\'s search when you pick its card. It filters only the Home button and sees only JioHotstar\'s, Google TV\'s and the Assistant\'s windows.</string>
     <string name="watch_service_label">Talkies: recently watched</string>

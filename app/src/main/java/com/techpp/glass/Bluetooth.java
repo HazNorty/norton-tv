@@ -85,7 +85,7 @@ final class Bluetooth {
 
     static String name(BluetoothDevice d) {
         try {
-            String n = d.getAlias();
+            String n = Build.VERSION.SDK_INT >= 30 ? d.getAlias() : null;  // getAlias is Android 11+
             if (n == null || n.isEmpty()) n = d.getName();
             return n == null || n.isEmpty() ? d.getAddress() : n;
         } catch (SecurityException e) {

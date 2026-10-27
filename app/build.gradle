@@ -4,8 +4,8 @@ android {
     namespace 'com.techpp.glass'
     compileSdk 35
     defaultConfig {
-        applicationId 'com.techpp.glass'
-        minSdk 30          // the TV runs Android 11 (API 30)
+        applicationId 'com.haznorty.nortontv'
+        minSdk 28          // Norton TV: the Bravia runs Android TV 9 (API 28)
         targetSdk 35
         // Each release: versionName as in CHANGELOG.md, versionCode one higher (Android installs only higher codes as updates).
         versionCode 3
