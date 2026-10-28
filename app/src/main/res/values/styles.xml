@@ -13,7 +13,7 @@
         <item name="android:paddingStart">12dp</item>
         <item name="android:paddingEnd">12dp</item>
         <item name="android:textSize">15sp</item>
-        <item name="android:fontFamily">@font/outfit</item>
+        <item name="android:fontFamily">@font/geist</item>
         <item name="android:singleLine">true</item>
     </style>
 </resources>

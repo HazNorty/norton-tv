@@ -117,6 +117,8 @@ public final class DashboardActivity extends Activity {
 
     private FrameLayout root;
     private TvView tvView;
+    private Uri tunedChannel;
+    private LinearLayout page;
     private int focusId = View.NO_ID;
     private boolean inFront;
 
@@ -181,6 +183,7 @@ public final class DashboardActivity extends Activity {
         try { unregisterReceiver(tick); } catch (IllegalArgumentException ignored) { }
         try { getSystemService(ConnectivityManager.class).unregisterNetworkCallback(net); } catch (Exception ignored) { }
         if (tvView != null) tvView.reset();
+        tunedChannel = null;  // tuned again on the way back
     }
 
     @Override public void onBackPressed() { /* the home screen: Back stays here */ }
@@ -323,17 +326,19 @@ public final class DashboardActivity extends Activity {
 
     // ---------------------------------------------------------------- the screen
 
-    /** Builds the whole screen from what's known now. Cheap enough to redo on every change. */
+    /**
+     * Builds the whole screen from what's known now. Cheap enough to redo on every change, except the live picture,
+     * which stays playing underneath (see placeLivePicture).
+     */
     private void build() {
         look = Look.of(light);
         getWindow().getDecorView().setBackgroundColor(look.ground);
-        root.removeAllViews();
-        if (tvView != null) { tvView.reset(); tvView = null; }
+        if (page != null) root.removeView(page);
 
-        LinearLayout page = new LinearLayout(this);
+        page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(px(56), px(44), px(56), px(44));
-        page.setBackgroundColor(look.ground);
+        // No background of its own: the window's is the ground, and the live picture shows through the Live TV tile.
         root.addView(page, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         page.addView(header(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(60)));
@@ -366,6 +371,8 @@ public final class DashboardActivity extends Activity {
         bottom.addView(gap(20, false));
         bottom.addView(continueTile(), weight(7, false));
         page.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(200)));
+
+        placeLivePicture();
 
         // Focus goes back to the tile that had it (or Live TV, the first time).
         View f = root.findViewWithTag(focusTag);
@@ -448,22 +455,12 @@ public final class DashboardActivity extends Activity {
         FrameLayout tile = new FrameLayout(this);
         tile.setTag("live");
         tile.setClipToOutline(true);
-        int fill = light ? 0xFF1A222D : 0xFF121A24;  // the picture area stays dark in both looks
+        boolean preview = previewWanted();
+        // The picture area stays dark in both looks; with the live picture on it is clear, so the picture shows.
+        int fill = preview ? Color.TRANSPARENT : light ? 0xFF1A222D : 0xFF121A24;
         pressable(tile, fill, look.edge, 22, 1.012f, this::openLiveTv);
 
-        boolean preview = prefs.getBoolean("live_preview", false) && now != null && now.channel != null;
-        if (preview) {
-            tvView = new TvView(this);
-            tvView.setFocusable(false);
-            tvView.setStreamVolume(0f);
-            tile.addView(tvView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            try {
-                String input = TvContract.Channels.CONTENT_URI.equals(now.channel) ? null : inputFor(now.channel);
-                if (input != null) tvView.tune(input, now.channel);
-            } catch (Exception e) {
-                Log.w(TAG, "Live picture failed: " + e);
-            }
-        } else {
+        if (!preview) {
             // No picture: the channel's name large and quiet, so the tile still reads as "the TV".
             TextView big = text(now != null && !now.channelName.isEmpty() ? now.channelName : "Live TV", 120, 0x22FFFFFF, sans, 700);
             big.setGravity(Gravity.CENTER);
@@ -512,6 +509,49 @@ public final class DashboardActivity extends Activity {
         il.gravity = Gravity.BOTTOM;
         tile.addView(info, il);
         return tile;
+    }
+
+    private boolean previewWanted() {
+        return prefs.getBoolean("live_preview", false) && now != null && now.channel != null && inFront;
+    }
+
+    /**
+     * The live picture (Settings → Live picture). It sits under the page, lined up with the Live TV tile, and is
+     * kept across rebuilds: rebuilding the page (a light switched, a new minute) leaves it playing, and it is only
+     * tuned again when the channel changes.
+     */
+    private void placeLivePicture() {
+        if (!previewWanted()) {
+            if (tvView != null) { tvView.reset(); root.removeView(tvView); tvView = null; tunedChannel = null; }
+            return;
+        }
+        if (tvView == null) {
+            tvView = new TvView(this);
+            tvView.setFocusable(false);
+            tvView.setStreamVolume(0f);
+            root.addView(tvView, 0, new FrameLayout.LayoutParams(0, 0));
+        }
+        LinearLayout built = page;
+        View tile = page.findViewWithTag("live");
+        page.post(() -> {
+            if (tvView == null || tile == null || built != page) return;
+            // The tile's place before its focus lift, so the picture doesn't move as focus comes and goes.
+            int x = 0, y = 0;
+            for (View v = tile; v != root && v != null; v = (View) v.getParent()) { x += v.getLeft(); y += v.getTop(); }
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) tvView.getLayoutParams();
+            if (lp.leftMargin != x || lp.topMargin != y || lp.width != tile.getWidth() || lp.height != tile.getHeight()) {
+                lp.leftMargin = x; lp.topMargin = y; lp.width = tile.getWidth(); lp.height = tile.getHeight();
+                tvView.setLayoutParams(lp);
+            }
+        });
+        if (!now.channel.equals(tunedChannel)) {
+            try {
+                String input = inputFor(now.channel);
+                if (input != null) { tvView.tune(input, now.channel); tunedChannel = now.channel; }
+            } catch (Exception e) {
+                Log.w(TAG, "Live picture failed: " + e);
+            }
+        }
     }
 
     /** A thin progress bar: `done` of it filled. */

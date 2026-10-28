@@ -258,7 +258,7 @@ public class HomeActivity extends Activity {
 
         // Banners are prepared at the size of the largest focused tile (an All apps tile at 110%).
         AppEntry.setBannerSize(px(GRID_TILE_W * 1.10f), px(GRID_TILE_H * 1.10f));
-        AppEntry.setFont(getResources().getFont(R.font.outfit));
+        AppEntry.setFont(getResources().getFont(R.font.geist));
         trending = new Trending(this);
         weather = new Weather(this);
         cricket = new Cricket(this);
@@ -573,8 +573,11 @@ public class HomeActivity extends Activity {
     /** Appearance from Control Center: Auto (by sunrise and sunset), Light or Dark. */
     private static final String[] APPEARANCE = {"Auto", "Light", "Dark"};
 
+    /** Norton TV: one Appearance setting for both screens, kept with Control Room's. */
+    private SharedPreferences looks() { return getSharedPreferences("dashboard", MODE_PRIVATE); }
+
     private boolean isDayNow() {
-        int mode = prefs.getInt("appearance", 0);
+        int mode = looks().getInt("appearance", 0);
         return mode == 1 || (mode == 0 && weather.isDay());
     }
 
@@ -706,23 +709,30 @@ public class HomeActivity extends Activity {
         focusedView = null;
     }
 
-    /** Where All apps starts: after the channel rows. */
-    private int gridTopDp() { return CHAN_TOP + chanRows.size() * CHAN_ROW_H + 18 + 40; }
+    /** Where All apps starts. Norton TV: straight under the dock, above the channel rows. */
+    private int gridTopDp() { return CHAN_TOP + 18 + 40; }
+
+    /** Where the channel rows (calendar, lights, football, app channels) start: after All apps. */
+    private int chanTopDp() {
+        int rows = (gridTiles.size() + GRID_COLS - 1) / GRID_COLS;
+        return gridTopDp() + rows * (GRID_TILE_H + GRID_GAP_Y) + 24;
+    }
 
     /**
-     * Places All apps under the channel rows and gives the page its full height (it is taller than the screen;
-     * without this the parent caps it at the screen and everything below is clipped away).
+     * Places All apps under the dock and the channel rows under it, and gives the page its full height (it is
+     * taller than the screen; without this the parent caps it at the screen and everything below is clipped away).
      */
     private void layoutPage() {
-        int gridTop = gridTopDp();
+        int gridTop = gridTopDp(), chanTop = chanTopDp();
         ((ViewGroup.MarginLayoutParams) allAppsLabel.getLayoutParams()).topMargin = px(gridTop - 40);
         ((ViewGroup.MarginLayoutParams) grid.getLayoutParams()).topMargin = px(gridTop);
-        int rows = (gridTiles.size() + GRID_COLS - 1) / GRID_COLS;
+        ((ViewGroup.MarginLayoutParams) channelsBox.getLayoutParams()).topMargin = px(chanTop);
         ViewGroup.LayoutParams plp = page.getLayoutParams();
-        plp.height = px(gridTop + rows * (GRID_TILE_H + GRID_GAP_Y) + 120);
+        plp.height = px(chanTop + chanRows.size() * CHAN_ROW_H + 120);
         page.setLayoutParams(plp);
         allAppsLabel.requestLayout();
         grid.requestLayout();
+        channelsBox.requestLayout();
     }
 
     // ---------------------------------------------------------------- channels
@@ -869,7 +879,7 @@ public class HomeActivity extends Activity {
             title.setTag("chanTitle");
             title.setText(ch.title);
             title.setTextSize(16);
-            title.setTypeface(getResources().getFont(R.font.outfit));
+            title.setTypeface(getResources().getFont(R.font.geist));
             title.setFontVariationSettings("'wght' 550");
             header.addView(title);
             row.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(28)));
@@ -908,7 +918,7 @@ public class HomeActivity extends Activity {
             name.setSingleLine(true);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
             name.setTextSize(15);
-            name.setTypeface(getResources().getFont(R.font.outfit));
+            name.setTypeface(getResources().getFont(R.font.geist));
             name.setFontVariationSettings("'wght' 600");
             caption.addView(name);
             TextView meta = new TextView(this);
@@ -916,7 +926,7 @@ public class HomeActivity extends Activity {
             meta.setSingleLine(true);
             meta.setEllipsize(android.text.TextUtils.TruncateAt.END);
             meta.setTextSize(12.5f);
-            meta.setTypeface(getResources().getFont(R.font.outfit));
+            meta.setTypeface(getResources().getFont(R.font.geist));
             caption.addView(meta);
             row.addView(caption, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(52)));
 
@@ -1043,7 +1053,7 @@ public class HomeActivity extends Activity {
         name.setText(p.title);
         name.setTextColor(lit ? 0xFF2B1B05 : theme.text);
         name.setTextSize(15);
-        name.setTypeface(getResources().getFont(R.font.outfit));
+        name.setTypeface(getResources().getFont(R.font.geist));
         name.setFontVariationSettings("'wght' 500");
         name.setMaxLines(2);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -1054,7 +1064,7 @@ public class HomeActivity extends Activity {
         st.setText(p.meta);
         st.setTextColor(lit ? 0xFF5A3A0C : theme.text2);
         st.setTextSize(11.5f);
-        st.setTypeface(getResources().getFont(R.font.outfit));
+        st.setTypeface(getResources().getFont(R.font.geist));
         st.setSingleLine(true);
         col.addView(st);
         card.addView(col, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -1093,7 +1103,7 @@ public class HomeActivity extends Activity {
         when.setText(e == null ? "" : (e.day.equals(java.time.LocalDate.now()) ? "" : "Tomorrow  ·  ") + eventTime(e));
         when.setTextColor(colour);
         when.setTextSize(12);
-        when.setTypeface(getResources().getFont(R.font.outfit));
+        when.setTypeface(getResources().getFont(R.font.geist));
         when.setFontVariationSettings("'wght' 600");
         when.setSingleLine(true);
         col.addView(when);
@@ -1101,7 +1111,7 @@ public class HomeActivity extends Activity {
         what.setText(p.title);
         what.setTextColor(theme.text);
         what.setTextSize(15);
-        what.setTypeface(getResources().getFont(R.font.outfit));
+        what.setTypeface(getResources().getFont(R.font.geist));
         what.setFontVariationSettings("'wght' 500");
         what.setMaxLines(2);
         what.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -1112,7 +1122,7 @@ public class HomeActivity extends Activity {
         who.setText(e == null ? (p.meta == null ? "" : p.meta) : e.calendar);
         who.setTextColor(theme.text2);
         who.setTextSize(11.5f);
-        who.setTypeface(getResources().getFont(R.font.outfit));
+        who.setTypeface(getResources().getFont(R.font.geist));
         who.setSingleLine(true);
         col.addView(who);
         card.addView(col, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -1181,7 +1191,7 @@ public class HomeActivity extends Activity {
         st.setSingleLine(true);
         st.setEllipsize(android.text.TextUtils.TruncateAt.END);
         st.setTextSize(12);
-        st.setTypeface(getResources().getFont(R.font.outfit));
+        st.setTypeface(getResources().getFont(R.font.geist));
         st.setTextColor(theme.text2);
         LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
         st.setGravity(android.view.Gravity.BOTTOM);
@@ -1211,7 +1221,7 @@ public class HomeActivity extends Activity {
         name.setTag("cricketText");
         name.setText(team);
         name.setTextSize(15);
-        name.setTypeface(getResources().getFont(R.font.outfit));
+        name.setTypeface(getResources().getFont(R.font.geist));
         name.setFontVariationSettings("'wght' 600");
         name.setTextColor(theme.text);
         line.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -1220,7 +1230,7 @@ public class HomeActivity extends Activity {
         sc.setText(runs);
         sc.setSingleLine(true);
         sc.setTextSize(14);
-        sc.setTypeface(getResources().getFont(R.font.outfit));
+        sc.setTypeface(getResources().getFont(R.font.geist));
         sc.setFontVariationSettings("'wght' 500");
         sc.setTextColor(theme.text);
         line.addView(sc);
@@ -1372,7 +1382,7 @@ public class HomeActivity extends Activity {
         name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         name.setTextSize(16);
-        name.setTypeface(getResources().getFont(R.font.outfit));
+        name.setTypeface(getResources().getFont(R.font.geist));
         name.setFontVariationSettings("'wght' 600");
         LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         nl.topMargin = px(9);
@@ -1384,7 +1394,7 @@ public class HomeActivity extends Activity {
         meta.setSingleLine(true);
         meta.setEllipsize(android.text.TextUtils.TruncateAt.END);
         meta.setTextSize(12.5f);
-        meta.setTypeface(getResources().getFont(R.font.outfit));
+        meta.setTypeface(getResources().getFont(R.font.geist));
         meta.setFontVariationSettings("'wght' 400");
         meta.setAlpha(0f);
         LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1674,7 +1684,7 @@ public class HomeActivity extends Activity {
         int row = gridIdx / GRID_COLS;
         int gridTop = gridTopDp();
         float rowTop = gridTop + row * (GRID_TILE_H + GRID_GAP_Y);
-        scrollPage(px(Math.max(gridTop - 96, rowTop - 190)));
+        scrollPage(px(Math.max(0, rowTop - 330)));  // Norton TV: the dock stays in view above the first rows
         setFocus(gridTiles.get(gridIdx), moving ? 1.18f : 1.10f, 11);
         updateAmbient();
         styleTop();
@@ -1688,7 +1698,7 @@ public class HomeActivity extends Activity {
         List<Trending.Pick> items = chanRows.get(chanIdx).items;
         int col = Math.max(0, Math.min(c, items.size() - 1));
         chanCol[chanIdx] = col;
-        scrollPage(px(CHAN_TOP + chanIdx * CHAN_ROW_H - 64));
+        scrollPage(px(chanTopDp() + chanIdx * CHAN_ROW_H - 64));
         // Slide the row so the focused card sits at the left, like Projectivy.
         if (chanIdx < chanSprings.size()) chanSprings.get(chanIdx).target = px(col * (cardW(chanRows.get(chanIdx)) + CH_GAP));
         startMotion();
@@ -1793,27 +1803,28 @@ public class HomeActivity extends Activity {
                 if (left && dockIdx > 0) focusDock(dockIdx - 1);
                 else if (right && dockIdx < dockTiles.size() - 1) focusDock(dockIdx + 1);
                 else if (up) { if (hasPicks) focusPicks(picksRow.anchor()); else focusTop(iconIdx); }
-                else if (down && !chanRows.isEmpty()) focusChan(0, chanCol[0]);
+                // Norton TV: All apps comes straight under the dock, the channel rows after it.
                 else if (down && !gridTiles.isEmpty()) focusGrid(Math.min(dockToGridCol(dockIdx), gridTiles.size() - 1));
+                else if (down && !chanRows.isEmpty()) focusChan(0, chanCol[0]);
                 break;
             case Z_CHAN: {
                 int n = chanRows.get(chanIdx).items.size(), c = chanCol[chanIdx];
                 if (left && c > 0) focusChan(chanIdx, c - 1);
                 else if (right && c < n - 1) focusChan(chanIdx, c + 1);
+                else if (up && chanIdx == 0 && !gridTiles.isEmpty()) focusGrid(((gridTiles.size() - 1) / GRID_COLS) * GRID_COLS);
                 else if (up && chanIdx == 0) focusDock(dockIdx);
                 else if (up) focusChan(chanIdx - 1, chanCol[chanIdx - 1]);
                 else if (down && chanIdx < chanRows.size() - 1) focusChan(chanIdx + 1, chanCol[chanIdx + 1]);
-                else if (down && !gridTiles.isEmpty()) focusGrid(0);
                 break;
             }
             case Z_GRID: {
                 int row = gridIdx / GRID_COLS, col = gridIdx % GRID_COLS;
                 if (left && col > 0) focusGrid(gridIdx - 1);
                 else if (right && col < GRID_COLS - 1 && gridIdx + 1 < gridTiles.size()) focusGrid(gridIdx + 1);
-                else if (up && row == 0 && !chanRows.isEmpty()) focusChan(chanRows.size() - 1, chanCol[chanRows.size() - 1]);
                 else if (up && row == 0) focusDock(gridToDockCol(col));
                 else if (up) focusGrid(gridIdx - GRID_COLS);
                 else if (down && (row + 1) * GRID_COLS < gridTiles.size()) focusGrid(Math.min(gridIdx + GRID_COLS, gridTiles.size() - 1));
+                else if (down && !chanRows.isEmpty()) focusChan(0, chanCol[0]);
                 break;
             }
         }
@@ -2016,7 +2027,7 @@ public class HomeActivity extends Activity {
             h.setText(heading);
             h.setTextSize(13);
             h.setTextColor(theme.text2);
-            h.setTypeface(getResources().getFont(R.font.outfit));
+            h.setTypeface(getResources().getFont(R.font.geist));
             h.setFontVariationSettings("'wght' 500");
             h.setPadding(px(14), px(8), px(14), px(6));
             menu.addView(h);
@@ -2862,9 +2873,9 @@ public class HomeActivity extends Activity {
         settingsAt = anchor;
         beginMenu(anchor, "Norton TV settings");
         final View[] look = new View[1];
-        look[0] = addRow("Appearance", APPEARANCE[prefs.getInt("appearance", 0)], () -> {
-            int mode = (prefs.getInt("appearance", 0) + 1) % APPEARANCE.length;
-            prefs.edit().putInt("appearance", mode).apply();
+        look[0] = addRow("Appearance", APPEARANCE[looks().getInt("appearance", 0)], () -> {
+            int mode = (looks().getInt("appearance", 0) + 1) % APPEARANCE.length;
+            looks().edit().putInt("appearance", mode).apply();
             setStatus(look[0], APPEARANCE[mode]);
             day = isDayNow();
             applyTheme();

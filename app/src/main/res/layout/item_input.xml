@@ -13,7 +13,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:fontFamily="@font/outfit"
+        android:fontFamily="@font/geist"
         android:fontVariationSettings="'wght' 450"
         android:singleLine="true"
         android:textSize="16sp" />
@@ -23,7 +23,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
-        android:fontFamily="@font/outfit"
+        android:fontFamily="@font/geist"
         android:fontVariationSettings="'wght' 400"
         android:singleLine="true"
         android:textSize="14sp"
