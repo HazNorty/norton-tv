@@ -339,7 +339,8 @@ public final class DashboardActivity extends Activity {
         page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(px(56), px(44), px(56), px(44));
-        // No background of its own: the window's is the ground, and the live picture shows through the Live TV tile.
+        // The ground, with a hole where the live picture (under the page) shows through the Live TV tile.
+        page.setBackground(new Ground(look.ground, previewWanted() ? pictureAt : null, px(22)));
         root.addView(page, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         page.addView(header(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(60)));
@@ -512,6 +513,37 @@ public final class DashboardActivity extends Activity {
         return tile;
     }
 
+    /** Where the live picture sits on the screen, once known (so a rebuild can leave its hole straight away). */
+    private android.graphics.Rect pictureAt;
+
+    /**
+     * The page's ground colour, with a rounded hole for the live picture. The window behind turns see-through once
+     * a TV picture plays under it, so the page paints the ground itself (or light mode shows the dark video plane).
+     */
+    private static final class Ground extends android.graphics.drawable.Drawable {
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Rect hole;
+        private final float radius;
+
+        Ground(int colour, android.graphics.Rect hole, float radius) {
+            paint.setColor(colour);
+            this.hole = hole;
+            this.radius = radius;
+        }
+
+        @Override public void draw(android.graphics.Canvas c) {
+            android.graphics.Path p = new android.graphics.Path();
+            p.setFillType(android.graphics.Path.FillType.EVEN_ODD);
+            p.addRect(new android.graphics.RectF(getBounds()), android.graphics.Path.Direction.CW);
+            if (hole != null) p.addRoundRect(new android.graphics.RectF(hole), radius, radius, android.graphics.Path.Direction.CW);
+            c.drawPath(p, paint);
+        }
+
+        @Override public void setAlpha(int a) { paint.setAlpha(a); }
+        @Override public void setColorFilter(android.graphics.ColorFilter f) { paint.setColorFilter(f); }
+        @Override public int getOpacity() { return hole == null ? android.graphics.PixelFormat.OPAQUE : android.graphics.PixelFormat.TRANSLUCENT; }
+    }
+
     private boolean previewWanted() {
         return prefs.getBoolean("live_preview", false) && now != null && now.channel != null && inFront;
     }
@@ -543,6 +575,11 @@ public final class DashboardActivity extends Activity {
             if (lp.leftMargin != x || lp.topMargin != y || lp.width != tile.getWidth() || lp.height != tile.getHeight()) {
                 lp.leftMargin = x; lp.topMargin = y; lp.width = tile.getWidth(); lp.height = tile.getHeight();
                 tvView.setLayoutParams(lp);
+            }
+            android.graphics.Rect at = new android.graphics.Rect(x, y, x + tile.getWidth(), y + tile.getHeight());
+            if (!at.equals(pictureAt)) {
+                pictureAt = at;
+                page.setBackground(new Ground(look.ground, at, px(22)));
             }
         });
         if (!now.channel.equals(tunedChannel)) {
@@ -882,7 +919,11 @@ public final class DashboardActivity extends Activity {
             }
             v.addView(top);
             v.addView(spacer(true));
-            v.addView(text(t.name, 26, fg, sans, 600));
+            // Long names (a device over HDMI, "PlayStation 4") go smaller over two lines rather than being cut off.
+            boolean longName = t.name.length() > 10;
+            TextView name = text(t.name, longName ? 21 : 26, fg, sans, 600);
+            if (longName) { name.setSingleLine(false); name.setMaxLines(2); name.setLineSpacing(0, 0.95f); }
+            v.addView(name);
             if (i > 0) row.addView(gap(16, false));
             row.addView(v, weight(1, false));
         }
