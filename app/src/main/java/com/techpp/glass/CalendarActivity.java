@@ -55,7 +55,7 @@ public final class CalendarActivity extends Activity {
         mono = getResources().getFont(R.font.geist_mono);
         monday = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         root = new FrameLayout(this);
-        root.setBackgroundColor(look.ground);
+        root.setBackground(new DashboardActivity.Ground(getIntent().getBooleanExtra(EXTRA_LIGHT, false), null, 0, scale));
         getWindow().getDecorView().setBackgroundColor(look.ground);
         setContentView(root);
         load();

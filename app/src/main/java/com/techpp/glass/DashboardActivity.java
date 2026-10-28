@@ -73,17 +73,17 @@ public final class DashboardActivity extends Activity {
         static Look of(boolean light) {
             Look l = new Look();
             if (light) {
-                l.ground = 0xFFEEF1F5; l.tile = 0xFFFFFFFF; l.edge = 0xFFDCE2EA; l.text = 0xFF0E141B; l.text2 = 0xFF566273;
+                l.ground = 0xFFF1EEE8; l.tile = 0xD6FFFFFF; l.edge = 0x140E141B; l.text = 0xFF0E141B; l.text2 = 0xFF566273;
                 l.text3 = 0xFF6E7A8A; l.focus = 0xFF0E141B; l.inset = 0xFFE6EBF1; l.track = 0xFFD5DCE5; l.chipEdge = 0xFFD3DAE3;
                 l.lightOnBg = 0xFFFFF1D6; l.lightOnEdge = 0xFFE0A030; l.lightOnFg = 0xFF6A4300;
                 l.lightOffBg = 0xFFF4F6F9; l.lightOffEdge = 0xFFDCE2EA; l.lightOffFg = 0xFF5E6A7A;
-                l.green = 0xFF0B7A52; l.greenEdge = 0xFF8FD6B6; l.neutralTile = 0xFFE3E8EE;
+                l.green = 0xFF0B7A52; l.greenEdge = 0xFF8FD6B6; l.neutralTile = 0xD9E3E8EE;
             } else {
-                l.ground = 0xFF0A0D12; l.tile = 0xFF10161E; l.edge = 0xFF1C2530; l.text = 0xFFE8EDF3; l.text2 = 0xFF8A97A8;
+                l.ground = 0xFF0D0F12; l.tile = 0xD110161E; l.edge = 0x12FFFFFF; l.text = 0xFFE8EDF3; l.text2 = 0xFF8A97A8;
                 l.text3 = 0xFF6F7D8E; l.focus = 0xFFFFFFFF; l.inset = 0xFF182230; l.track = 0xFF243041; l.chipEdge = 0xFF1F2834;
                 l.lightOnBg = 0xFF3B2A0E; l.lightOnEdge = 0xFFFFC46B; l.lightOnFg = 0xFFFFDCA0;
                 l.lightOffBg = 0xFF141B24; l.lightOffEdge = 0xFF232D3A; l.lightOffFg = 0xFF8A97A8;
-                l.green = 0xFF5EE0A8; l.greenEdge = 0xFF1D4A3A; l.neutralTile = 0xFF1A212B;
+                l.green = 0xFF5EE0A8; l.greenEdge = 0xFF1D4A3A; l.neutralTile = 0xD91A212B;
             }
             return l;
         }
@@ -340,7 +340,7 @@ public final class DashboardActivity extends Activity {
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(px(56), px(44), px(56), px(44));
         // The ground, with a hole where the live picture (under the page) shows through the Live TV tile.
-        page.setBackground(new Ground(look.ground, previewWanted() ? pictureAt : null, px(22)));
+        page.setBackground(new Ground(light, previewWanted() ? pictureAt : null, px(22), scale));
         root.addView(page, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         page.addView(header(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(60)));
@@ -404,7 +404,7 @@ public final class DashboardActivity extends Activity {
         if (vpnOn || vpnInstalled) {
             TextView vpn = chip(vpnOn ? "VPN · On" : "VPN · Off", vpnOn ? look.green : look.text3, vpnOn ? look.greenEdge : look.chipEdge, R.drawable.ic_vpn);
             vpn.setTag("vpn");
-            pressable(vpn, look.ground, vpnOn ? look.greenEdge : look.chipEdge, 999, 1.04f, () -> {
+            pressable(vpn, Color.TRANSPARENT, vpnOn ? look.greenEdge : look.chipEdge, 999, 1.04f, () -> {
                 Intent i = pm.getLeanbackLaunchIntentForPackage(VPN_APP);
                 if (i != null) start(i);
             });
@@ -418,7 +418,7 @@ public final class DashboardActivity extends Activity {
         gear.setPadding(px(14), px(14), px(14), px(14));
         gear.setContentDescription("Settings");
         gear.setTag("settings");
-        pressable(gear, look.ground, look.chipEdge, 999, 1.08f, this::openSettings);
+        pressable(gear, Color.TRANSPARENT, look.chipEdge, 999, 1.08f, this::openSettings);
         h.addView(gear, new LinearLayout.LayoutParams(px(56), px(56)));
         return h;
     }
@@ -438,7 +438,7 @@ public final class DashboardActivity extends Activity {
         TextView t = text(s, 21, colour, sans, 500);
         t.setGravity(Gravity.CENTER_VERTICAL);
         t.setPadding(px(18), 0, px(20), 0);
-        t.setBackground(box(look.ground, edge, 999, 1));
+        t.setBackground(box(Color.TRANSPARENT, edge, 999, 1));  // the linen shows through the chips
         android.graphics.drawable.Drawable d = getDrawable(icon);
         if (d != null) {
             d = d.mutate();
@@ -517,30 +517,65 @@ public final class DashboardActivity extends Activity {
     private android.graphics.Rect pictureAt;
 
     /**
-     * The page's ground colour, with a rounded hole for the live picture. The window behind turns see-through once
-     * a TV picture plays under it, so the page paints the ground itself (or light mode shows the dark video plane).
+     * The page's ground: Linen (chosen from five on the design canvas). A warm linen by day, a charcoal felt by
+     * night: a very fine weave of hairlines every few pixels over the ground colour, darkening softly towards the
+     * edges. Optionally with a rounded hole for the live picture: the window behind turns see-through once a TV
+     * picture plays under it, so the page paints the ground itself (or light mode shows the dark video plane).
      */
-    private static final class Ground extends android.graphics.drawable.Drawable {
-        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+    static final class Ground extends android.graphics.drawable.Drawable {
+        private final android.graphics.Paint weave = new android.graphics.Paint(), edge = new android.graphics.Paint();
+        private final int base;
+        private final boolean light;
         private final android.graphics.Rect hole;
-        private final float radius;
+        private final float radius, scale;
 
-        Ground(int colour, android.graphics.Rect hole, float radius) {
-            paint.setColor(colour);
+        Ground(boolean light, android.graphics.Rect hole, float radius, float scale) {
+            this.light = light;
             this.hole = hole;
             this.radius = radius;
+            this.scale = scale;
+            base = Look.of(light).ground;
+            // One tile of the weave: a thread across its top and one down its left side.
+            int pitch = Math.max(3, Math.round(6 * scale));
+            Bitmap tile = Bitmap.createBitmap(pitch, pitch, Bitmap.Config.ARGB_8888);
+            int across = light ? Color.argb(9, 90, 70, 40) : Color.argb(6, 255, 255, 255);
+            int down = light ? Color.argb(8, 90, 70, 40) : Color.argb(5, 255, 255, 255);
+            for (int i = 0; i < pitch; i++) { tile.setPixel(i, 0, across); tile.setPixel(0, i, down); }
+            tile.setPixel(0, 0, across);
+            weave.setShader(new android.graphics.BitmapShader(tile, android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT));
+        }
+
+        @Override protected void onBoundsChange(android.graphics.Rect b) {
+            // An ellipse 120% of the screen each way, centred a little above the middle: clear to 55–60%, then the
+            // edge tint (warm brown by day, black at night).
+            float w = Math.max(1, b.width()), h = Math.max(1, b.height());
+            android.graphics.RadialGradient g = new android.graphics.RadialGradient(0, 0, 1.2f * w,
+                    new int[]{Color.TRANSPARENT, Color.TRANSPARENT, light ? Color.argb(26, 120, 95, 60) : Color.argb(115, 0, 0, 0)},
+                    new float[]{0f, light ? 0.6f : 0.55f, 1f}, android.graphics.Shader.TileMode.CLAMP);
+            android.graphics.Matrix m = new android.graphics.Matrix();
+            m.setScale(1f, h / w);
+            m.postTranslate(b.left + 0.5f * w, b.top + 0.4f * h);
+            g.setLocalMatrix(m);
+            edge.setShader(g);
         }
 
         @Override public void draw(android.graphics.Canvas c) {
-            android.graphics.Path p = new android.graphics.Path();
-            p.setFillType(android.graphics.Path.FillType.EVEN_ODD);
-            p.addRect(new android.graphics.RectF(getBounds()), android.graphics.Path.Direction.CW);
-            if (hole != null) p.addRoundRect(new android.graphics.RectF(hole), radius, radius, android.graphics.Path.Direction.CW);
-            c.drawPath(p, paint);
+            int saved = c.save();
+            if (hole != null) {
+                android.graphics.Path p = new android.graphics.Path();
+                p.setFillType(android.graphics.Path.FillType.EVEN_ODD);
+                p.addRect(new android.graphics.RectF(getBounds()), android.graphics.Path.Direction.CW);
+                p.addRoundRect(new android.graphics.RectF(hole), radius, radius, android.graphics.Path.Direction.CW);
+                c.clipPath(p);
+            }
+            c.drawColor(base);
+            c.drawRect(getBounds(), weave);
+            c.drawRect(getBounds(), edge);
+            c.restoreToCount(saved);
         }
 
-        @Override public void setAlpha(int a) { paint.setAlpha(a); }
-        @Override public void setColorFilter(android.graphics.ColorFilter f) { paint.setColorFilter(f); }
+        @Override public void setAlpha(int a) { }
+        @Override public void setColorFilter(android.graphics.ColorFilter f) { }
         @Override public int getOpacity() { return hole == null ? android.graphics.PixelFormat.OPAQUE : android.graphics.PixelFormat.TRANSLUCENT; }
     }
 
@@ -579,7 +614,7 @@ public final class DashboardActivity extends Activity {
             android.graphics.Rect at = new android.graphics.Rect(x, y, x + tile.getWidth(), y + tile.getHeight());
             if (!at.equals(pictureAt)) {
                 pictureAt = at;
-                page.setBackground(new Ground(look.ground, at, px(22)));
+                page.setBackground(new Ground(light, at, px(22), scale));
             }
         });
         if (!now.channel.equals(tunedChannel)) {
