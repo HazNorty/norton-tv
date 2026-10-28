@@ -74,6 +74,9 @@ final class Calendars {
         dir = new File(ctx.getFilesDir(), "calendar");
     }
 
+    /** When the feeds were last fetched (ms), or 0 before the first time. */
+    long updatedAt() { return prefs.getLong("ok_at", 0); }
+
     /** True once calendar links have been set up on this TV. */
     boolean configured() { adoptPushedLinks(); return !links().isEmpty(); }
 

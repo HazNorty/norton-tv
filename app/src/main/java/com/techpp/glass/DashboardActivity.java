@@ -30,6 +30,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.text.format.DateFormat;
+import android.text.format.DateUtils;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -790,7 +791,13 @@ public final class DashboardActivity extends Activity {
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.addView(label("Today · tomorrow", look.text2));
         head.addView(spacer());
-        head.addView(label("OK · full week", look.text3));
+        // When the calendars were last fetched (OK on the tile opens the full week).
+        long at = calendars.updatedAt();
+        if (at > 0) {
+            boolean today = DateUtils.isToday(at);
+            String time = String.valueOf(DateFormat.format(DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mma", at)).toLowerCase(Locale.UK);
+            head.addView(label("Updated " + (today ? time : DateFormat.format("EEE", at) + " " + time), look.text3));
+        }
         c.addView(head);
         c.setTag("calendar");
         pressable(c, look.tile, look.edge, 22, 1.012f,
@@ -829,7 +836,21 @@ public final class DashboardActivity extends Activity {
         String name, kind, key;
         int colour;
         Runnable open;
+        android.graphics.drawable.Drawable icon;  // an installed app's own icon
+        String[] logos;                           // or logo addresses to try in turn (the UK players, HDMI devices)
     }
+
+    /**
+     * Each service's own app icon, from its website (the UK players are web apps on this TV, with no icon of
+     * their own). Downloaded once and kept on disk; the second address is Google's copy of the site icon.
+     */
+    private static String[] siteLogo(String direct, String domain) {
+        String google = "https://www.google.com/s2/favicons?sz=256&domain=" + domain;
+        return direct == null ? new String[]{google} : new String[]{direct, google};
+    }
+
+    /** Logos kept between rebuilds (once a minute), so the tiles don't blink. */
+    private final java.util.Map<String, Bitmap> logoCache = new java.util.HashMap<>();
 
     private View appsRow() {
         LinearLayout row = new LinearLayout(this);
@@ -845,15 +866,79 @@ public final class DashboardActivity extends Activity {
             int fill = neutral ? look.neutralTile : t.colour;
             int fg = neutral ? look.text : Color.WHITE;
             pressable(v, fill, neutral ? look.edge : fill, 18, 1.06f, t.open);
-            TextView kind = text(t.kind, 16, fg, mono, 500);
-            kind.setAlpha(0.72f);
-            v.addView(kind);
+            LinearLayout top = new LinearLayout(this);
+            top.setOrientation(LinearLayout.HORIZONTAL);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            boolean hasLogo = t.icon != null || t.logos != null;
+            if (hasLogo) {
+                top.addView(logo(t));
+                top.addView(spacer());
+            }
+            // With a logo the kind ("BBC") says nothing more; HDMI tiles keep theirs ("HDMI 1").
+            if (!hasLogo || t.key.startsWith("hdmi:")) {
+                TextView kind = text(t.kind, 16, fg, mono, 500);
+                kind.setAlpha(0.72f);
+                top.addView(kind);
+            }
+            v.addView(top);
             v.addView(spacer(true));
             v.addView(text(t.name, 26, fg, sans, 600));
             if (i > 0) row.addView(gap(16, false));
             row.addView(v, weight(1, false));
         }
         return row;
+    }
+
+    /** A tile's logo: a small rounded square, like an app icon on a phone. */
+    private View logo(Tile t) {
+        ImageView img = new ImageView(this);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        int size = px(52), radius = px(12);
+        img.setLayoutParams(new LinearLayout.LayoutParams(size, size));
+        img.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override public void getOutline(View view, android.graphics.Outline o) { o.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius); }
+        });
+        img.setClipToOutline(true);
+        if (t.icon != null) { img.setImageDrawable(t.icon); return img; }
+        Bitmap known = logoCache.get(t.key);
+        if (known != null) { img.setImageBitmap(known); return img; }
+        img.setVisibility(View.INVISIBLE);
+        File dir = new File(getCacheDir(), "logos");
+        background.execute(() -> {
+            Bitmap b = null;
+            for (String url : t.logos) {
+                File f = WatchNext.cached(this, dir, url, 192);
+                if (f != null && (b = BitmapFactory.decodeFile(f.getPath())) != null) break;
+            }
+            Bitmap got = b;
+            if (got != null) main.post(() -> { logoCache.put(t.key, got); img.setImageBitmap(got); img.setVisibility(View.VISIBLE); });
+        });
+        return img;
+    }
+
+    /** The UK players' logos. */
+    private static String[] playerLogo(String pkg) {
+        switch (pkg) {
+            case "player:iplayer": return siteLogo("https://iplayer-web.files.bbci.co.uk/page-builder/58.2.9/img/icons/touch-icon-192.png", "bbc.co.uk");
+            case "player:itvx": return siteLogo(null, "www.itv.com");
+            case "player:channel4": return siteLogo("https://www.channel4.com/apple-touch-icon.png", "channel4.com");
+            case "player:my5": return siteLogo("https://www.channel5.com/my5_192.png", "channel5.com");
+            default: return null;
+        }
+    }
+
+    /** A logo for what's plugged in, from its name as the TV hears it over HDMI-CEC ("PlayStation 4", "Fire TV"). */
+    private static String[] deviceLogo(String name) {
+        String n = name.toLowerCase(Locale.UK);
+        if (n.contains("playstation") || n.matches(".*\\bps[345]\\b.*")) return siteLogo(null, "playstation.com");
+        if (n.contains("fire") || n.contains("amazon")) return siteLogo(null, "amazon.co.uk");
+        if (n.contains("xbox")) return siteLogo(null, "xbox.com");
+        if (n.contains("nintendo") || n.contains("switch")) return siteLogo(null, "nintendo.com");
+        if (n.contains("apple")) return siteLogo(null, "apple.com");
+        if (n.contains("sky")) return siteLogo(null, "sky.com");
+        if (n.contains("roku")) return siteLogo(null, "roku.com");
+        if (n.contains("chromecast") || n.contains("google")) return siteLogo(null, "store.google.com");
+        return null;
     }
 
     /**
@@ -877,25 +962,36 @@ public final class DashboardActivity extends Activity {
                 t.kind = kindOf(a);
                 t.colour = tileColour(a);
                 t.open = () -> start(a.launchIntent());
+                if (a.isPlayer()) t.logos = playerLogo(a.pkg);
+                else try { t.icon = pm.getApplicationIcon(a.pkg); } catch (PackageManager.NameNotFoundException ignored) { }
                 out.add(t);
                 break;
             }
         }
-        // HDMI 1 and HDMI 2, connected or not (the others are under All apps → Inputs).
+        // HDMI 1 and HDMI 2, connected or not (the others are under All apps → Inputs), named after what's plugged
+        // in when the TV knows it over HDMI-CEC: such devices are inputs of their own, under their port.
         TvInputManager tim = getSystemService(TvInputManager.class);
         if (tim != null) {
             try {
-                List<TvInputInfo> ports = new ArrayList<>();
+                List<TvInputInfo> ports = new ArrayList<>(), devices = new ArrayList<>();
                 for (TvInputInfo i : tim.getTvInputList()) {
-                    if (i.getType() != TvInputInfo.TYPE_HDMI || i.getParentId() != null) continue;  // CEC devices sit under their port
-                    ports.add(i);
+                    if (i.getType() != TvInputInfo.TYPE_HDMI) continue;
+                    (i.getParentId() == null ? ports : devices).add(i);
                 }
                 ports.sort((a, b) -> String.valueOf(a.loadLabel(this)).compareTo(String.valueOf(b.loadLabel(this))));
                 for (TvInputInfo i : ports.subList(0, Math.min(2, ports.size()))) {
                     Tile t = new Tile();
                     t.key = "hdmi:" + i.getId();
-                    t.name = String.valueOf(i.loadLabel(this));
-                    t.kind = "INPUT";
+                    String port = String.valueOf(i.loadLabel(this)), device = null;
+                    for (TvInputInfo d : devices) {
+                        if (!i.getId().equals(d.getParentId())) continue;
+                        device = String.valueOf(d.loadLabel(this));
+                        break;
+                    }
+                    boolean named = device != null && !device.trim().isEmpty() && !device.equals(port);
+                    t.name = named ? device.trim() : port;
+                    t.kind = named ? port.toUpperCase(Locale.UK) : "INPUT";
+                    if (named) t.logos = deviceLogo(device);
                     t.colour = 0;
                     t.open = () -> {
                         Intent v = new Intent(Intent.ACTION_VIEW);
