@@ -599,7 +599,7 @@ public final class DashboardActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(crest(m.short1, m.t1));
+        row.addView(crest(m.short1, m.t1, m.img1));
         row.addView(spacer());
         LinearLayout mid = new LinearLayout(this);
         mid.setOrientation(LinearLayout.VERTICAL);
@@ -615,7 +615,7 @@ public final class DashboardActivity extends Activity {
         }
         row.addView(mid);
         row.addView(spacer());
-        row.addView(crest(m.short2, m.t2));
+        row.addView(crest(m.short2, m.t2, m.img2));
         c.addView(row);
         c.addView(spacer(true));
         boolean home = Football.TEAM.equals(m.short1);
@@ -629,18 +629,36 @@ public final class DashboardActivity extends Activity {
         return v;
     }
 
-    /** A round crest stand-in: the team's three letters, Arsenal's in red. */
-    private View crest(String abbr, String name) {
+    /**
+     * The team's crest from ESPN (its dark-background version in the dark look, so Spurs or Newcastle don't vanish),
+     * cached on disk. Until it arrives, or with no connection, a round stand-in with the team's three letters.
+     */
+    private View crest(String abbr, String name, String url) {
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setGravity(Gravity.CENTER_HORIZONTAL);
         boolean ours = Football.TEAM.equals(abbr);
+        FrameLayout slot = new FrameLayout(this);
         TextView dot = text(abbr == null ? "" : abbr, 20, ours ? Color.WHITE : look.text, sans, 600);
         dot.setGravity(Gravity.CENTER);
         dot.setBackground(box(ours ? (light ? RED : 0xFF3A0A10) : look.inset, ours ? RED : look.edge, 999, 1));
-        col.addView(dot, new LinearLayout.LayoutParams(px(76), px(76)));
-        col.addView(gap(8, true));
-        col.addView(text(name == null ? "" : name, 18, look.text2, sans, 400));
+        slot.addView(dot, new FrameLayout.LayoutParams(px(76), px(76), Gravity.CENTER));
+        ImageView img = new ImageView(this);
+        img.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        slot.addView(img, new FrameLayout.LayoutParams(px(96), px(96), Gravity.CENTER));
+        col.addView(slot, new LinearLayout.LayoutParams(px(96), px(96)));
+        col.addView(gap(6, true));
+        col.addView(text(name == null ? "" : name, 18, ours ? RED : look.text2, sans, ours ? 600 : 400));
+        if (url != null && !url.isEmpty()) {
+            String want = light ? url : url.replace("/500/", "/500-dark/");
+            File dir = new File(getCacheDir(), "crests");
+            background.execute(() -> {
+                File f = WatchNext.cached(this, dir, want, 192);
+                if (f == null && !want.equals(url)) f = WatchNext.cached(this, dir, url, 192);
+                Bitmap b = f == null ? null : BitmapFactory.decodeFile(f.getPath());
+                if (b != null) main.post(() -> { img.setImageBitmap(b); dot.setVisibility(View.GONE); });
+            });
+        }
         return col;
     }
 
