@@ -63,7 +63,9 @@ final class Weather {
         // Running set-location.sh again (even with the same place) rewrites the file: fetch right away.
         long stamp = new File(ctx.getExternalFilesDir(null), "location.txt").lastModified();
         boolean moved = !area.equals(prefs.getString("area", null)) || stamp != prefs.getLong("file_at", 0)
-                || !unit().equals(prefs.getString("unit", "C"));  // the TV now in a °F country, or back
+                || !unit().equals(prefs.getString("unit", "C"))  // the TV now in a °F country, or back
+                // Saved before Norton TV kept the hourly forecast: fetch now, but not every minute if that fails.
+                || !prefs.contains("hours") && now - prefs.getLong("try_at", 0) > 60_000L;
         prefs.edit().putLong("file_at", stamp).apply();
         if (!moved && (now - prefs.getLong("ok_at", 0) < REFRESH_MS || now - prefs.getLong("try_at", 0) < RETRY_MS)) return;
         prefs.edit().putLong("try_at", now).apply();
@@ -139,8 +141,11 @@ final class Weather {
     private String observe(double lat, double lon) throws Exception {
         JSONObject forecast = get(String.format(Locale.US,
                 "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m,weather_code,is_day"
-                        + "&daily=sunrise,sunset&timezone=auto&forecast_days=1", lat, lon));
+                        + "&hourly=temperature_2m,weather_code,is_day&forecast_hours=13"
+                        + "&daily=sunrise,sunset&timezone=auto&forecast_days=2", lat, lon));
         JSONObject here = forecast.getJSONObject("current");
+        saveHours(forecast.optJSONObject("hourly"));
+        prefs.edit().putInt("code", here.getInt("weather_code")).putBoolean("code_day", here.optInt("is_day", 1) == 1).apply();
         // Today's sunrise and sunset ("2026-10-21T06:07"), for the launcher's automatic day/night look.
         JSONObject daily = forecast.optJSONObject("daily");
         if (daily != null) {
@@ -219,6 +224,72 @@ final class Weather {
         s = b.toString().replace("Airport Airport", "Airport");
         if (!s.toLowerCase(Locale.ROOT).contains("airport") && !s.isEmpty()) s += " Airport";
         return s.isEmpty() ? icao : s;
+    }
+
+    // ---------------------------------------------------------------- Norton TV: icon and hourly forecast
+
+    /** One hour of the forecast: its local hour (0–23), temperature in the TV's unit and WMO code. */
+    static final class Hour {
+        int hour, temp, code;
+        boolean day;
+    }
+
+    /** "HH|temp|code|day;…" for the next 12 hours, from the forecast's local-time "2026-10-28T14:00" stamps. */
+    private void saveHours(JSONObject hourly) {
+        if (hourly == null) return;
+        try {
+            JSONArray time = hourly.getJSONArray("time"), temp = hourly.getJSONArray("temperature_2m"),
+                    code = hourly.getJSONArray("weather_code"), day = hourly.getJSONArray("is_day");
+            boolean f = Region.fahrenheit(Region.country(ctx));
+            StringBuilder b = new StringBuilder();
+            for (int i = 0; i < time.length(); i++) {
+                double t = temp.getDouble(i);
+                if (f) t = t * 9 / 5 + 32;
+                if (b.length() > 0) b.append(';');
+                b.append(time.getString(i).substring(11, 13)).append('|').append(Math.round(t)).append('|')
+                        .append(code.getInt(i)).append('|').append(day.optInt(i, 1));
+            }
+            prefs.edit().putString("hours", b.toString()).putLong("hours_at", System.currentTimeMillis()).apply();
+        } catch (Exception e) {
+            Log.w(TAG, "No hourly forecast: " + e);
+        }
+    }
+
+    /** The saved forecast from this hour on, skipping hours that have passed since it was fetched. */
+    List<Hour> hours() {
+        List<Hour> all = new ArrayList<>();
+        for (String part : prefs.getString("hours", "").split(";")) {
+            String[] p = part.split("\\|");
+            if (p.length < 4) continue;
+            try {
+                Hour h = new Hour();
+                h.hour = Integer.parseInt(p[0]); h.temp = Integer.parseInt(p[1]); h.code = Integer.parseInt(p[2]);
+                h.day = !"0".equals(p[3]);
+                all.add(h);
+            } catch (NumberFormatException ignored) { }
+        }
+        long passed = Math.max(0, (System.currentTimeMillis() - prefs.getLong("hours_at", 0)) / 3600_000L);
+        int thisHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+        int start = -1;
+        for (int i = 0; i < all.size() && i <= passed + 1; i++) if (all.get(i).hour == thisHour) { start = i; break; }
+        if (start < 0) start = (int) Math.min(passed, all.size());
+        return all.subList(start, all.size());
+    }
+
+    /** The current WMO weather code (−1 before the first fetch) and whether it's daytime there. */
+    int code() { return prefs.getInt("code", -1); }
+    boolean codeIsDay() { return prefs.getBoolean("code_day", isDay()); }
+
+    /** The line icon for a WMO code: sun or moon, part cloud, cloud, fog, rain, snow or thunder. */
+    static int icon(int code, boolean day) {
+        if (code <= 1) return day ? R.drawable.ic_weather_sun : R.drawable.ic_weather_moon;
+        if (code == 2) return day ? R.drawable.ic_weather_part : R.drawable.ic_weather_part_night;
+        if (code == 3) return R.drawable.ic_weather_cloud;
+        if (code == 45 || code == 48) return R.drawable.ic_weather_fog;
+        if (code >= 71 && code <= 77 || code == 85 || code == 86) return R.drawable.ic_weather_snow;
+        if (code >= 95) return R.drawable.ic_weather_thunder;
+        if (code >= 51) return R.drawable.ic_weather_rain;
+        return R.drawable.ic_weather_cloud;
     }
 
     /** WMO weather codes, as Open-Meteo uses them. */

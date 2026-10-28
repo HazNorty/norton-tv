@@ -79,6 +79,14 @@
             android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode" />
 
+        <!-- The full-screen calendar, opened from the dashboard's calendar tile. -->
+        <activity
+            android:name=".CalendarActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|uiMode" />
+
         <!-- Norton TV has no accessibility service, notification listener or boot receiver (Talkies' sleep timer,
              Turn off now, Restart, remote keys and updates bell are gone with them). -->
 

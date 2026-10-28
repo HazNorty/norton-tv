@@ -78,17 +78,19 @@ final class Calendars {
     boolean configured() { adoptPushedLinks(); return !links().isEmpty(); }
 
     /** Today's and tomorrow's events from the feeds saved last time (no network). Call off the main thread. */
-    List<Event> cached() {
+    List<Event> cached() { return range(LocalDate.now(ZoneId.systemDefault()), 2); }
+
+    /** Events on {@code days} days from {@code from} (the full-screen calendar's week), from the saved feeds. */
+    List<Event> range(LocalDate from, int days) {
         adoptPushedLinks();
         List<String[]> links = links();
         List<Event> out = new ArrayList<>();
         ZoneId here = ZoneId.systemDefault();
-        LocalDate today = LocalDate.now(here);
         for (int i = 0; i < links.size(); i++) {
             File f = new File(dir, i + ".ics");
             if (!f.isFile()) continue;
             try {
-                out.addAll(parse(read(f), links.get(i)[0], COLOURS[i % COLOURS.length], today, here));
+                out.addAll(parse(read(f), links.get(i)[0], COLOURS[i % COLOURS.length], from, days, here));
             } catch (Exception e) {
                 Log.w(TAG, "Couldn't read " + links.get(i)[0] + ": " + e);
             }
@@ -177,8 +179,8 @@ final class Calendars {
         List<String> exdates = new ArrayList<>();
     }
 
-    /** Events from one feed that fall on today or tomorrow. */
-    static List<Event> parse(byte[] ics, String calendar, int colour, LocalDate today, ZoneId here) {
+    /** Events from one feed that fall on the {@code days} days from {@code today}. */
+    static List<Event> parse(byte[] ics, String calendar, int colour, LocalDate today, int days, ZoneId here) {
         List<Vevent> events = new ArrayList<>();
         Vevent cur = null;
         int depth = 0;  // inside VEVENT but in a nested block (VALARM)
@@ -205,7 +207,7 @@ final class Calendars {
             if (!cur.props.containsKey(name)) { cur.props.put(name, value); cur.params.put(name, params); }
         }
 
-        LocalDate end = today.plusDays(2);
+        LocalDate end = today.plusDays(days);
         // Moved or edited single occurrences ("RECURRENCE-ID") replace that date of their series.
         Set<String> overridden = new HashSet<>();
         for (Vevent v : events) {

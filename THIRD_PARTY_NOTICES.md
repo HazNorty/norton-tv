@@ -103,3 +103,8 @@ and the sleep timer's one-minute warning follows its Sleep Timer add-on; both un
 
 `app/src/main/res/font/geist.ttf` and `geist_mono.ttf`: Copyright 2024 The Geist Project Authors
 (https://github.com/vercel/geist-font), from Google Fonts, under the SIL Open Font License 1.1 (GEIST-OFL.txt).
+
+## Feather icons (weather)
+
+The cloud, rain, snow, thunder and moon shapes in `app/src/main/res/drawable/ic_weather_*.xml` follow Feather's
+icons (https://github.com/feathericons/feather), Copyright (c) 2013-2023 Cole Bemis, under the MIT license.

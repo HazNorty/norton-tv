@@ -65,7 +65,7 @@ public final class DashboardActivity extends Activity {
     private static final int RED = 0xFFE20520;
 
     /** The two looks. Brand colours (apps, Arsenal, calendars) are the same in both. */
-    private static final class Look {
+    static final class Look {
         int ground, tile, edge, text, text2, text3, focus, inset, track, chipEdge;
         int lightOnBg, lightOnEdge, lightOnFg, lightOffBg, lightOffEdge, lightOffFg, green, greenEdge, neutralTile;
 
@@ -109,7 +109,9 @@ public final class DashboardActivity extends Activity {
     private Cricket.Match teamMatch;
     private List<Calendars.Event> events = new ArrayList<>();
     private List<Hue.Light> lights = new ArrayList<>();
-    private List<Trending.Pick> continuePicks = new ArrayList<>();
+    private List<Trending.Pick> continuePicks = new ArrayList<>(), trendPicks = new ArrayList<>();
+    private Trending trending;
+    private final java.util.Map<String, Bitmap> art = new java.util.HashMap<>();
     private Programme now;
     private boolean vpnOn;
 
@@ -141,6 +143,7 @@ public final class DashboardActivity extends Activity {
         football = new Football(this);
         calendars = new Calendars(this);
         hue = new Hue(this);
+        trending = new Trending(this);
         root = new FrameLayout(this);
         setContentView(root);
         weatherLine = weather.cached();
@@ -212,6 +215,10 @@ public final class DashboardActivity extends Activity {
         football.refreshIfStale(list -> { matches = list; build(); });
         calendars.refreshIfStale(list -> { events = list; build(); });
         hue.refreshIfStale(list -> { lights = list; build(); });
+        trending.refreshIfStale(all -> background.execute(() -> {
+            List<Trending.Pick> t = trendingNow();
+            main.post(() -> { trendPicks = t; build(); });
+        }));
     }
 
     private boolean isLight() {
@@ -343,7 +350,7 @@ public final class DashboardActivity extends Activity {
         sideTop.addView(arsenalTile(), weight(3, false));
         sideTop.addView(gap(20, false));
         sideTop.addView(weatherTile(), weight(2, false));
-        side.addView(sideTop, weight(1, true));
+        side.addView(sideTop, weight(1.3f, true));  // the weather tile needs room for its hourly strip
         side.addView(gap(20, true));
         side.addView(calendarTile(), weight(1, true));
         top.addView(side, weight(5, false));
@@ -379,7 +386,8 @@ public final class DashboardActivity extends Activity {
 
         String w = weatherLine == null ? null : weatherLine.trim();
         if (w != null && !w.isEmpty()) {
-            TextView chip = chip(cap(w), look.text2, look.chipEdge, R.drawable.ic_weather_sun);
+            int sky = weather.code() >= 0 ? Weather.icon(weather.code(), weather.codeIsDay()) : R.drawable.ic_weather_sun;
+            TextView chip = chip(cap(w), look.text2, look.chipEdge, sky);
             h.addView(chip);
             h.addView(gap(14, false));
         }
@@ -518,8 +526,19 @@ public final class DashboardActivity extends Activity {
         return b;
     }
 
-    /** Live TV: Sony's TV app, which hands over to YouView on this TV. */
+    /**
+     * Live TV on the tile's channel: Sony's TV app takes a channel from the guide to tune to (as the HDMI tiles do
+     * with an input). Without one, the TV app as it was left, which hands over to YouView on this TV.
+     */
     private void openLiveTv() {
+        if (now != null && now.channel != null) {
+            Intent v = new Intent(Intent.ACTION_VIEW).setDataAndType(now.channel, "vnd.android.cursor.item/channel").setPackage(TVX);
+            if (pm.resolveActivity(v, 0) != null) {
+                Log.i(TAG, "Tuning to " + now.channel);
+                start(v);
+                return;
+            }
+        }
         Intent tv = pm.getLeanbackLaunchIntentForPackage(TVX);
         if (tv == null) tv = new Intent(Intent.ACTION_MAIN).setClassName(TVX, TVX + ".MainActivity");
         start(tv);
@@ -673,14 +692,56 @@ public final class DashboardActivity extends Activity {
 
     private View weatherTile() {
         LinearLayout c = card(true, 28);
-        c.addView(label("Weather", look.text2));
-        c.addView(spacer(true));
         String w = weatherLine == null ? "" : weatherLine.trim();
         int sp = w.indexOf(' ');
-        c.addView(text(sp > 0 ? w.substring(0, sp) : (w.isEmpty() ? "–" : w), 76, look.text, sans, 300));
+        // Now: the temperature large with today's sky beside it, its condition underneath.
+        LinearLayout nowRow = new LinearLayout(this);
+        nowRow.setOrientation(LinearLayout.HORIZONTAL);
+        nowRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout left = new LinearLayout(this);
+        left.setOrientation(LinearLayout.VERTICAL);
+        left.addView(label("Weather", look.text2));
+        left.addView(gap(10, true));
+        left.addView(text(sp > 0 ? w.substring(0, sp) : (w.isEmpty() ? "–" : w), 54, look.text, sans, 300));
+        left.addView(gap(6, true));
+        left.addView(text(sp > 0 ? cap(w.substring(sp + 1)) : "", 19, look.text2, sans, 400));
+        nowRow.addView(left, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (weather.code() >= 0) nowRow.addView(icon(Weather.icon(weather.code(), weather.codeIsDay()), look.text, 64));
+        c.addView(nowRow);
         c.addView(spacer(true));
-        c.addView(text(sp > 0 ? cap(w.substring(sp + 1)) : "", 21, look.text2, sans, 400));
+        // Through the day, like Apple's: now, then every three hours.
+        List<Weather.Hour> hours = weather.hours();
+        if (!hours.isEmpty()) {
+            LinearLayout strip = new LinearLayout(this);
+            strip.setOrientation(LinearLayout.HORIZONTAL);
+            for (int i = 0; i < hours.size() && i <= 9; i += 3) {
+                Weather.Hour h = hours.get(i);
+                LinearLayout col = new LinearLayout(this);
+                col.setOrientation(LinearLayout.VERTICAL);
+                col.setGravity(Gravity.CENTER_HORIZONTAL);
+                TextView at = text(i == 0 ? "Now" : String.format(Locale.UK, "%02d", h.hour), 15, look.text3, mono, 500);
+                at.setGravity(Gravity.CENTER_HORIZONTAL);
+                col.addView(at);
+                col.addView(gap(6, true));
+                col.addView(icon(Weather.icon(h.code, h.day), look.text2, 26));
+                col.addView(gap(6, true));
+                TextView deg = text(h.temp + "°", 18, look.text, sans, 500);
+                deg.setGravity(Gravity.CENTER_HORIZONTAL);
+                col.addView(deg);
+                strip.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            }
+            c.addView(strip);
+        }
         return c;
+    }
+
+    /** A line icon at a design size, tinted. */
+    private ImageView icon(int res, int colour, float size) {
+        ImageView v = new ImageView(this);
+        v.setImageResource(res);
+        v.setImageTintList(ColorStateList.valueOf(colour));
+        v.setLayoutParams(new LinearLayout.LayoutParams(px(size), px(size)));
+        return v;
     }
 
     private View calendarTile() {
@@ -689,7 +750,11 @@ public final class DashboardActivity extends Activity {
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.addView(label("Today · tomorrow", look.text2));
         head.addView(spacer());
+        head.addView(label("OK · full week", look.text3));
         c.addView(head);
+        c.setTag("calendar");
+        pressable(c, look.tile, look.edge, 22, 1.012f,
+                () -> start(new Intent(this, CalendarActivity.class).putExtra(CalendarActivity.EXTRA_LIGHT, light)));
         c.addView(gap(16, true));
         LocalDate today = LocalDate.now();
         int shown = 0;
@@ -752,18 +817,11 @@ public final class DashboardActivity extends Activity {
     }
 
     /**
-     * Your dock (as arranged in All apps; Live TV left out, it has the big tile), the connected HDMI inputs, then
-     * Inputs and All apps: nine tiles in one row.
+     * Your dock (as arranged in All apps; Live TV left out, it has the big tile), HDMI 1 and 2, then All apps:
+     * nine tiles in one row.
      */
     private List<Tile> appTiles() {
-        List<AppEntry> all = new ArrayList<>();
-        Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
-        boolean players = PlayerActivity.available(pm) || new File(getExternalFilesDir(null), "players_preview").isFile();
-        for (ResolveInfo ri : pm.queryIntentActivities(q, PackageManager.GET_META_DATA)) {
-            AppEntry a = new AppEntry(ri.activityInfo, String.valueOf(ri.loadLabel(pm)).trim());
-            if (ri.activityInfo.packageName.equals(getPackageName()) && !(a.isPlayer() && players)) continue;
-            all.add(a);
-        }
+        List<AppEntry> all = apps();
         List<String> order = new ArrayList<>();
         String saved = homePrefs.getString("order_dock", null);
         if (saved != null) order.addAll(Arrays.asList(saved.split(",")));
@@ -783,13 +841,17 @@ public final class DashboardActivity extends Activity {
                 break;
             }
         }
+        // HDMI 1 and HDMI 2, connected or not (the others are under All apps → Inputs).
         TvInputManager tim = getSystemService(TvInputManager.class);
         if (tim != null) {
             try {
+                List<TvInputInfo> ports = new ArrayList<>();
                 for (TvInputInfo i : tim.getTvInputList()) {
-                    if (out.size() >= 7) break;
-                    if (i.getType() != TvInputInfo.TYPE_HDMI || i.isPassthroughInput() && tim.getInputState(i.getId()) == TvInputManager.INPUT_STATE_DISCONNECTED) continue;
-                    if (i.getParentId() != null) continue;  // HDMI-CEC devices sit under their port
+                    if (i.getType() != TvInputInfo.TYPE_HDMI || i.getParentId() != null) continue;  // CEC devices sit under their port
+                    ports.add(i);
+                }
+                ports.sort((a, b) -> String.valueOf(a.loadLabel(this)).compareTo(String.valueOf(b.loadLabel(this))));
+                for (TvInputInfo i : ports.subList(0, Math.min(2, ports.size()))) {
                     Tile t = new Tile();
                     t.key = "hdmi:" + i.getId();
                     t.name = String.valueOf(i.loadLabel(this));
@@ -806,15 +868,24 @@ public final class DashboardActivity extends Activity {
                 Log.i(TAG, "No inputs: " + e);
             }
         }
-        Tile inputs = new Tile();
-        inputs.key = "inputs"; inputs.name = "Inputs"; inputs.kind = "HDMI · AV"; inputs.colour = 0;
-        inputs.open = () -> start(new Intent(this, HomeActivity.class).putExtra(RemoteKeys.EXTRA_OPEN, RemoteKeys.INPUTS));
-        out.add(inputs);
         Tile apps = new Tile();
         apps.key = "all"; apps.name = "All apps"; apps.kind = "···"; apps.colour = 0;
         apps.open = () -> start(new Intent(this, HomeActivity.class));
         out.add(apps);
         return out;
+    }
+
+    /** The TV's apps, with the UK players (Norton TV's own tiles) in place of Norton TV itself. */
+    private List<AppEntry> apps() {
+        List<AppEntry> all = new ArrayList<>();
+        Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
+        boolean players = PlayerActivity.available(pm) || new File(getExternalFilesDir(null), "players_preview").isFile();
+        for (ResolveInfo ri : pm.queryIntentActivities(q, PackageManager.GET_META_DATA)) {
+            AppEntry a = new AppEntry(ri.activityInfo, String.valueOf(ri.loadLabel(pm)).trim());
+            if (ri.activityInfo.packageName.equals(getPackageName()) && !(a.isPlayer() && players)) continue;
+            all.add(a);
+        }
+        return all;
     }
 
     private static String shortName(AppEntry a) {
@@ -932,24 +1003,39 @@ public final class DashboardActivity extends Activity {
         background.execute(() -> {
             List<Trending.Pick> list;
             try { list = WatchNext.load(this); } catch (Exception e) { list = new ArrayList<>(); }
-            List<Trending.Pick> out = list;
-            main.post(() -> { continuePicks = out; build(); });
+            List<Trending.Pick> out = list, trend = trendingNow();
+            main.post(() -> { continuePicks = out; trendPicks = trend; build(); });
         });
     }
 
+    /** This hour's trending picks on your UK players (TMDB, refreshed by Trending), "New in the UK" first. */
+    private List<Trending.Pick> trendingNow() {
+        List<Trending.Pick> out = new ArrayList<>(Trending.forThisHour(trending.cached(Trending.INDIA)));
+        out.addAll(Trending.forThisHour(trending.cached(Trending.TRENDING)));
+        return out;
+    }
+
+    /**
+     * Continue watching (Android TV's Watch Next list, filled by apps such as YouTube), topped up with what's
+     * trending on iPlayer, ITVX, Channel 4 and My5, so the tile is never empty.
+     */
     private View continueTile() {
         LinearLayout c = card(true, 24);
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
-        head.addView(label("Continue watching", look.text2));
+        int cont = Math.min(4, continuePicks.size());
+        List<Trending.Pick> shown = new ArrayList<>(continuePicks.subList(0, cont));
+        for (Trending.Pick p : trendPicks) if (shown.size() < 4) shown.add(p);
+        head.addView(label(cont == 0 && !shown.isEmpty() ? "Trending in the UK" : cont < shown.size() ? "Continue watching · trending" : "Continue watching", look.text2));
         head.addView(spacer());
         c.addView(head);
         c.addView(gap(14, true));
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        int n = Math.min(4, continuePicks.size());
+        int n = shown.size();
         for (int i = 0; i < n; i++) {
-            Trending.Pick p = continuePicks.get(i);
+            Trending.Pick p = shown.get(i);
+            boolean trend = i >= cont;
             FrameLayout card = new FrameLayout(this);
             card.setTag("cont:" + i);
             card.setClipToOutline(true);
@@ -957,9 +1043,21 @@ public final class DashboardActivity extends Activity {
             if (p.image != null && p.image.isFile()) {
                 ImageView img = new ImageView(this);
                 img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                Bitmap bm = BitmapFactory.decodeFile(p.image.getPath(), sample(2));
+                // Kept between rebuilds (one a minute), not decoded again each time. TMDB's pictures are 1280 wide.
+                String path = p.image.getPath();
+                Bitmap bm = art.get(path);
+                if (bm == null) { bm = BitmapFactory.decodeFile(path, sample(trend ? 4 : 2)); if (bm != null) art.put(path, bm); }
+                if (art.size() > 12) art.clear();
                 img.setImageBitmap(bm);
                 card.addView(img, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+            if (trend && p.service != null && !p.service.isEmpty()) {
+                TextView svc = text(p.service, 13, Color.WHITE, mono, 500);
+                svc.setPadding(px(8), px(4), px(8), px(4));
+                svc.setBackground(box(0xB3000000, 0, 6, 0));
+                FrameLayout.LayoutParams sl = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                sl.leftMargin = px(10); sl.topMargin = px(10);
+                card.addView(svc, sl);
             }
             TextView title = text(p.title, 17, Color.WHITE, sans, 500);
             title.setPadding(px(12), px(26), px(12), px(12));
@@ -991,7 +1089,12 @@ public final class DashboardActivity extends Activity {
         if (p.intentUri != null) {
             try { start(Intent.parseUri(p.intentUri, Intent.URI_INTENT_SCHEME)); return; } catch (Exception ignored) { }
         }
-        Intent i = p.pkg == null ? null : pm.getLeanbackLaunchIntentForPackage(p.pkg);
+        Intent i = null;
+        if (p.pkg != null && p.pkg.startsWith(PlayerActivity.KEY_PREFIX)) {
+            for (AppEntry a : apps()) if (a.pkg.equals(p.pkg)) { i = a.launchIntent(); break; }
+        } else if (p.pkg != null) {
+            i = pm.getLeanbackLaunchIntentForPackage(p.pkg);
+        }
         if (i != null) start(i);
     }
 
