@@ -56,7 +56,7 @@ import java.util.concurrent.Executors;
  * Norton TV's home screen, "Control Room": everything on one screen, no scrolling, laid out like a dashboard on a
  * 1920×1080 design grid (scaled to the TV). Live TV leads (now and next on your channel, optionally its picture);
  * beside it Arsenal's next match, the weather and today's and tomorrow's plans; then a row of apps and inputs; then
- * the Hue lights and Continue watching. Light and dark looks (Auto follows sunrise and sunset, like Talkies).
+ * the Hue lights across the full width. Light and dark looks (Auto follows sunrise and sunset, like Talkies).
  * The Talkies screen (HomeActivity) stays as All apps, with its Inputs menu and settings. Ordinary Android focus
  * drives the remote: every tile you can press is a focusable view with a ring.
  */
@@ -69,6 +69,8 @@ public final class DashboardActivity extends Activity {
     static final class Look {
         int ground, tile, edge, text, text2, text3, focus, inset, track, chipEdge;
         int lightOnBg, lightOnEdge, lightOnFg, lightOffBg, lightOffEdge, lightOffFg, green, greenEdge, neutralTile;
+        /** Today's events on the calendar tile (tomorrow's stay grey). */
+        int today;
 
         static Look of(boolean light) {
             Look l = new Look();
@@ -77,13 +79,13 @@ public final class DashboardActivity extends Activity {
                 l.text3 = 0xFF6E7A8A; l.focus = 0xFF0E141B; l.inset = 0xFFE6EBF1; l.track = 0xFFD5DCE5; l.chipEdge = 0xFFD3DAE3;
                 l.lightOnBg = 0xFFFFF1D6; l.lightOnEdge = 0xFFE0A030; l.lightOnFg = 0xFF6A4300;
                 l.lightOffBg = 0xFFF4F6F9; l.lightOffEdge = 0xFFDCE2EA; l.lightOffFg = 0xFF5E6A7A;
-                l.green = 0xFF0B7A52; l.greenEdge = 0xFF8FD6B6; l.neutralTile = 0xD9E3E8EE;
+                l.green = 0xFF0B7A52; l.greenEdge = 0xFF8FD6B6; l.neutralTile = 0xD9E3E8EE; l.today = 0xFFB4530A;
             } else {
                 l.ground = 0xFF0D0F12; l.tile = 0xD110161E; l.edge = 0x12FFFFFF; l.text = 0xFFE8EDF3; l.text2 = 0xFF8A97A8;
                 l.text3 = 0xFF6F7D8E; l.focus = 0xFFFFFFFF; l.inset = 0xFF182230; l.track = 0xFF243041; l.chipEdge = 0xFF1F2834;
                 l.lightOnBg = 0xFF3B2A0E; l.lightOnEdge = 0xFFFFC46B; l.lightOnFg = 0xFFFFDCA0;
                 l.lightOffBg = 0xFF141B24; l.lightOffEdge = 0xFF232D3A; l.lightOffFg = 0xFF8A97A8;
-                l.green = 0xFF5EE0A8; l.greenEdge = 0xFF1D4A3A; l.neutralTile = 0xD91A212B;
+                l.green = 0xFF5EE0A8; l.greenEdge = 0xFF1D4A3A; l.neutralTile = 0xD91A212B; l.today = 0xFFFFB86B;
             }
             return l;
         }
@@ -108,11 +110,9 @@ public final class DashboardActivity extends Activity {
     private String weatherLine;
     private List<Cricket.Match> matches = new ArrayList<>();
     private Cricket.Match teamMatch;
+    private List<Cricket.Match> teamNextOnes = new ArrayList<>();
     private List<Calendars.Event> events = new ArrayList<>();
     private List<Hue.Light> lights = new ArrayList<>();
-    private List<Trending.Pick> continuePicks = new ArrayList<>(), trendPicks = new ArrayList<>();
-    private Trending trending;
-    private final java.util.Map<String, Bitmap> art = new java.util.HashMap<>();
     private Programme now;
     private boolean vpnOn;
 
@@ -146,7 +146,6 @@ public final class DashboardActivity extends Activity {
         football = new Football(this);
         calendars = new Calendars(this);
         hue = new Hue(this);
-        trending = new Trending(this);
         root = new FrameLayout(this);
         setContentView(root);
         weatherLine = weather.cached();
@@ -167,15 +166,17 @@ public final class DashboardActivity extends Activity {
         background.execute(() -> {
             List<Cricket.Match> saved = football.cached();
             Cricket.Match team = football.teamNext();
-            List<Calendars.Event> ev = calendars.configured() ? calendars.cached() : new ArrayList<>();
+            List<Cricket.Match> upcoming = football.teamUpcoming();
+            boolean demo = Demo.on(this);
+            List<Calendars.Event> ev = demo ? Demo.events() : calendars.configured() ? calendars.cached() : new ArrayList<>();
             Programme p = readGuide();
             main.post(() -> {
-                matches = saved; teamMatch = team; events = ev; now = p;
+                matches = saved; teamMatch = team; teamNextOnes = upcoming; events = ev; now = p;
+                if (demo) lights = Demo.lights();
                 build();
                 refresh();
             });
         });
-        loadContinue();
     }
 
     @Override protected void onPause() {
@@ -215,14 +216,15 @@ public final class DashboardActivity extends Activity {
     private void refresh() {
         if (!inFront) return;
         weather.refreshIfStale(line -> { weatherLine = line; boolean l = isLight(); if (l != light) light = l; build(); });
-        football.refreshTeamIfStale(() -> { teamMatch = football.teamNext(); build(); });
+        football.refreshTeamIfStale(() -> background.execute(() -> {
+            Cricket.Match team = football.teamNext();
+            List<Cricket.Match> upcoming = football.teamUpcoming();
+            main.post(() -> { teamMatch = team; teamNextOnes = upcoming; build(); });
+        }));
         football.refreshIfStale(list -> { matches = list; build(); });
+        if (Demo.on(this)) return;  // the emulator's placeholder lights and events stay as they are
         calendars.refreshIfStale(list -> { events = list; build(); });
         hue.refreshIfStale(list -> { lights = list; build(); });
-        trending.refreshIfStale(all -> background.execute(() -> {
-            List<Trending.Pick> t = trendingNow();
-            main.post(() -> { trendPicks = t; build(); });
-        }));
     }
 
     private boolean isLight() {
@@ -367,12 +369,8 @@ public final class DashboardActivity extends Activity {
         page.addView(appsRow(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(150)));
         page.addView(gap(20, true));
 
-        LinearLayout bottom = new LinearLayout(this);
-        bottom.setOrientation(LinearLayout.HORIZONTAL);
-        bottom.addView(lightsTile(), weight(5, false));
-        bottom.addView(gap(20, false));
-        bottom.addView(continueTile(), weight(7, false));
-        page.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(200)));
+        // The Lights, across the full width (Continue watching and Trending are gone).
+        page.addView(lightsTile(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(200)));
 
         placeLivePicture();
 
@@ -389,17 +387,10 @@ public final class DashboardActivity extends Activity {
         boolean h24 = DateFormat.is24HourFormat(this);
         long t = System.currentTimeMillis();
         h.addView(text(String.valueOf(DateFormat.format(h24 ? "HH:mm" : "h:mm", t)), 56, look.text, sans, 300));
-        h.addView(gap(22, false));
-        h.addView(text(String.valueOf(DateFormat.format("EEEE d MMMM", t)), 24, look.text2, sans, 400));
+        h.addView(gap(26, false));
+        // The date as strong as the time beside it (the weather has its own tile, so no chip for it up here).
+        h.addView(text(String.valueOf(DateFormat.format("EEEE d MMMM", t)), 42, look.text, sans, 500));
         h.addView(spacer());
-
-        String w = weatherLine == null ? null : weatherLine.trim();
-        if (w != null && !w.isEmpty()) {
-            int sky = weather.code() >= 0 ? Weather.icon(weather.code(), weather.codeIsDay()) : R.drawable.ic_weather_sun;
-            TextView chip = chip(cap(w), look.text2, look.chipEdge, sky);
-            h.addView(chip);
-            h.addView(gap(14, false));
-        }
         boolean vpnInstalled = pm.getLeanbackLaunchIntentForPackage(VPN_APP) != null;
         if (vpnOn || vpnInstalled) {
             TextView vpn = chip(vpnOn ? "VPN · On" : "VPN · Off", vpnOn ? look.green : look.text3, vpnOn ? look.greenEdge : look.chipEdge, R.drawable.ic_vpn);
@@ -712,6 +703,7 @@ public final class DashboardActivity extends Activity {
 
     private View arsenalTile() {
         LinearLayout c = card(true, 28);
+        c.setTag("arsenal");
         Cricket.Match m = null;
         for (Cricket.Match x : matches) if (x.ours && x.live) { m = x; break; }
         if (m == null) m = teamMatch;
@@ -726,6 +718,9 @@ public final class DashboardActivity extends Activity {
         if (m == null) {
             c.addView(text("No fixture yet", 30, look.text, sans, 400));
             c.addView(spacer(true));
+            pressable(c, look.tile, look.edge, 22, 1.012f,
+                    () -> start(new Intent(this, TableActivity.class).putExtra(TableActivity.EXTRA_LEAGUE, "eng.1")
+                            .putExtra(TableActivity.EXTRA_LIGHT, light)));
             return c;
         }
         LinearLayout row = new LinearLayout(this);
@@ -752,6 +747,19 @@ public final class DashboardActivity extends Activity {
         c.addView(spacer(true));
         boolean home = Football.TEAM.equals(m.short1);
         c.addView(text(m.kind + "  ·  " + (home ? "Home" : "Away"), 18, look.text2, sans, 400));
+        // And the one after, whatever the competition: "Then  Dortmund (H)  ·  Tue 24 Nov  ·  UCL".
+        Cricket.Match then = null;
+        for (Cricket.Match x : teamNextOnes) if (!x.id.equals(m.id) && x.at > m.at) { then = x; break; }
+        if (then != null) {
+            boolean h2 = Football.TEAM.equals(then.short1);
+            c.addView(gap(6, true));
+            c.addView(text("Then  " + (h2 ? then.t2 : then.t1) + (h2 ? " (H)" : " (A)") + "  ·  "
+                    + DateFormat.format("EEE d MMM", then.at) + "  ·  " + then.league, 18, look.text3, sans, 400));
+        }
+        String slug = m.slug == null || m.slug.isEmpty() ? "eng.1" : m.slug;
+        pressable(c, look.tile, look.edge, 22, 1.012f,
+                () -> start(new Intent(this, TableActivity.class).putExtra(TableActivity.EXTRA_LEAGUE, slug)
+                        .putExtra(TableActivity.EXTRA_LIGHT, light)));
         return c;
     }
 
@@ -882,17 +890,20 @@ public final class DashboardActivity extends Activity {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
+            // Today's events in a warm amber, tomorrow's in quiet grey; the dot keeps its calendar's colour.
+            boolean isToday = e.day.equals(today);
             View dot = new View(this);
             dot.setBackground(box(e.colour, 0, 999, 0));
+            dot.setAlpha(isToday ? 1f : 0.55f);
             row.addView(dot, new LinearLayout.LayoutParams(px(12), px(12)));
             row.addView(gap(18, false));
             String when = e.allDay ? "All day" : String.format(Locale.UK, DateFormat.is24HourFormat(this) ? "%02d:%02d" : "%d:%02d",
                     DateFormat.is24HourFormat(this) ? e.start.getHour() : (e.start.getHour() + 11) % 12 + 1, e.start.getMinute());
-            TextView t = text(when, 22, e.colour, mono, 500);
+            TextView t = text(when, 22, isToday ? look.today : look.text3, mono, isToday ? 600 : 400);
             row.addView(t, new LinearLayout.LayoutParams(px(140), ViewGroup.LayoutParams.WRAP_CONTENT));
-            TextView title = text(e.title, 23, look.text, sans, 400);
+            TextView title = text(e.title, 23, isToday ? look.text : look.text2, sans, isToday ? 500 : 400);
             row.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            row.addView(text(e.day.equals(today) ? "Today" : "Tomorrow", 18, look.text3, sans, 400));
+            row.addView(text(isToday ? "Today" : "Tomorrow", 18, isToday ? look.today : look.text3, sans, isToday ? 600 : 400));
             c.addView(row);
             c.addView(gap(16, true));
             shown++;
@@ -993,7 +1004,7 @@ public final class DashboardActivity extends Activity {
     }
 
     /** The UK players' logos. */
-    private static String[] playerLogo(String pkg) {
+    static String[] playerLogo(String pkg) {
         switch (pkg) {
             case "player:iplayer": return siteLogo("https://iplayer-web.files.bbci.co.uk/page-builder/58.2.9/img/icons/touch-icon-192.png", "bbc.co.uk");
             case "player:itvx": return siteLogo(null, "www.itv.com");
@@ -1036,7 +1047,7 @@ public final class DashboardActivity extends Activity {
                 t.key = a.pkg;
                 t.name = shortName(a);
                 t.kind = kindOf(a);
-                t.colour = tileColour(a);
+                t.colour = tileColour(a, pm);
                 t.open = () -> start(a.launchIntent());
                 if (a.isPlayer()) t.logos = playerLogo(a.pkg);
                 else try { t.icon = pm.getApplicationIcon(a.pkg); } catch (PackageManager.NameNotFoundException ignored) { }
@@ -1100,7 +1111,7 @@ public final class DashboardActivity extends Activity {
         return all;
     }
 
-    private static String shortName(AppEntry a) {
+    static String shortName(AppEntry a) {
         switch (a.pkg) {
             case "player:iplayer": return "iPlayer";
             case "com.google.android.youtube.tvmusic": return "YT Music";
@@ -1120,7 +1131,7 @@ public final class DashboardActivity extends Activity {
     }
 
     /** Each app's own colour (the players' set colours, else its banner's), deepened so white text reads on it. */
-    private int tileColour(AppEntry a) {
+    static int tileColour(AppEntry a, PackageManager pm) {
         switch (a.pkg) {
             case "player:iplayer": return 0xFFC2006B;
             case "player:itvx": return 0xFF1C3A50;
@@ -1147,12 +1158,12 @@ public final class DashboardActivity extends Activity {
         head.addView(spacer());
         int on = 0;
         for (Hue.Light l : lights) if (l.on && l.reachable) on++;
-        if (hue.linked() && !lights.isEmpty()) head.addView(label(on == 0 ? "All off" : on + " on", look.lightOnEdge));
+        if (!lights.isEmpty()) head.addView(label(on == 0 ? "All off" : on + " on", look.lightOnEdge));
         c.addView(head);
         c.addView(gap(14, true));
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.HORIZONTAL);
-        if (!hue.linked()) {
+        if (!hue.linked() && !Demo.on(this)) {
             TextView link = text(hue.linking() ? "Press the button on the Hue Bridge now" : "Link your Hue lights  ·  press OK", 22,
                     look.text, sans, 500);
             link.setGravity(Gravity.CENTER_VERTICAL);
@@ -1161,14 +1172,15 @@ public final class DashboardActivity extends Activity {
             pressable(link, look.lightOffBg, look.lightOffEdge, 14, 1.02f, this::linkHue);
             grid.addView(link, weight(1, false));
         } else {
-            int max = lights.size() > 4 ? 3 : 4;
+            // Every bulb across the full width (eight fit; more than that ends in "+n more").
+            int max = lights.size() > 8 ? 7 : 8;
             for (int i = 0; i < Math.min(max, lights.size()); i++) {
-                if (i > 0) grid.addView(gap(12, false));
+                if (i > 0) grid.addView(gap(14, false));
                 grid.addView(bulb(lights.get(i)), weight(1, false));
             }
-            if (lights.size() > 4) {
-                grid.addView(gap(12, false));
-                TextView more = text("+" + (lights.size() - 3) + " more", 20, look.text2, sans, 500);
+            if (lights.size() > 8) {
+                grid.addView(gap(14, false));
+                TextView more = text("+" + (lights.size() - 7) + " more", 20, look.text2, sans, 500);
                 more.setGravity(Gravity.CENTER);
                 more.setTag("lights-more");
                 pressable(more, look.lightOffBg, look.lightOffEdge, 14, 1.05f, () -> start(new Intent(this, HomeActivity.class)));
@@ -1184,7 +1196,7 @@ public final class DashboardActivity extends Activity {
         boolean lit = l.on && l.reachable;
         LinearLayout b = new LinearLayout(this);
         b.setOrientation(LinearLayout.VERTICAL);
-        b.setPadding(px(14), px(12), px(14), px(12));
+        b.setPadding(px(18), px(14), px(18), px(14));
         b.setTag("light:" + l.id);
         int fill = lit ? look.lightOnBg : look.lightOffBg, edge = lit ? look.lightOnEdge : look.lightOffEdge, fg = lit ? look.lightOnFg : look.lightOffFg;
         pressable(b, fill, edge, 14, 1.06f, () -> hue.toggle(l, list -> { lights = list; build(); }));
@@ -1193,8 +1205,12 @@ public final class DashboardActivity extends Activity {
         icon.setImageTintList(ColorStateList.valueOf(fg));
         b.addView(icon, new LinearLayout.LayoutParams(px(24), px(24)));
         b.addView(spacer(true));
-        TextView name = text(l.name, 19, fg, sans, 500);
+        TextView name = text(l.name, 21, fg, sans, 500);
         b.addView(name);
+        b.addView(gap(4, true));
+        TextView st = text(l.status(), 16, fg, sans, 400);
+        st.setAlpha(0.75f);
+        b.addView(st);
         b.setContentDescription(l.name + ", " + l.status());
         return b;
     }
@@ -1207,107 +1223,6 @@ public final class DashboardActivity extends Activity {
             build();
         });
         build();
-    }
-
-    // ---------------------------------------------------------------- continue watching
-
-    private void loadContinue() {
-        background.execute(() -> {
-            List<Trending.Pick> list;
-            try { list = WatchNext.load(this); } catch (Exception e) { list = new ArrayList<>(); }
-            List<Trending.Pick> out = list, trend = trendingNow();
-            main.post(() -> { continuePicks = out; trendPicks = trend; build(); });
-        });
-    }
-
-    /** This hour's trending picks on your UK players (TMDB, refreshed by Trending), "New in the UK" first. */
-    private List<Trending.Pick> trendingNow() {
-        List<Trending.Pick> out = new ArrayList<>(Trending.forThisHour(trending.cached(Trending.INDIA)));
-        out.addAll(Trending.forThisHour(trending.cached(Trending.TRENDING)));
-        return out;
-    }
-
-    /**
-     * Continue watching (Android TV's Watch Next list, filled by apps such as YouTube), topped up with what's
-     * trending on iPlayer, ITVX, Channel 4 and My5, so the tile is never empty.
-     */
-    private View continueTile() {
-        LinearLayout c = card(true, 24);
-        LinearLayout head = new LinearLayout(this);
-        head.setOrientation(LinearLayout.HORIZONTAL);
-        int cont = Math.min(4, continuePicks.size());
-        List<Trending.Pick> shown = new ArrayList<>(continuePicks.subList(0, cont));
-        for (Trending.Pick p : trendPicks) if (shown.size() < 4) shown.add(p);
-        head.addView(label(cont == 0 && !shown.isEmpty() ? "Trending in the UK" : cont < shown.size() ? "Continue watching · trending" : "Continue watching", look.text2));
-        head.addView(spacer());
-        c.addView(head);
-        c.addView(gap(14, true));
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        int n = shown.size();
-        for (int i = 0; i < n; i++) {
-            Trending.Pick p = shown.get(i);
-            boolean trend = i >= cont;
-            FrameLayout card = new FrameLayout(this);
-            card.setTag("cont:" + i);
-            card.setClipToOutline(true);
-            pressable(card, look.inset, look.inset, 12, 1.06f, () -> openPick(p));
-            if (p.image != null && p.image.isFile()) {
-                ImageView img = new ImageView(this);
-                img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                // Kept between rebuilds (one a minute), not decoded again each time. TMDB's pictures are 1280 wide.
-                String path = p.image.getPath();
-                Bitmap bm = art.get(path);
-                if (bm == null) { bm = BitmapFactory.decodeFile(path, sample(trend ? 4 : 2)); if (bm != null) art.put(path, bm); }
-                if (art.size() > 12) art.clear();
-                img.setImageBitmap(bm);
-                card.addView(img, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            }
-            if (trend && p.service != null && !p.service.isEmpty()) {
-                TextView svc = text(p.service, 13, Color.WHITE, mono, 500);
-                svc.setPadding(px(8), px(4), px(8), px(4));
-                svc.setBackground(box(0xB3000000, 0, 6, 0));
-                FrameLayout.LayoutParams sl = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                sl.leftMargin = px(10); sl.topMargin = px(10);
-                card.addView(svc, sl);
-            }
-            TextView title = text(p.title, 17, Color.WHITE, sans, 500);
-            title.setPadding(px(12), px(26), px(12), px(12));
-            title.setBackgroundColor(0x99000000);
-            FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            tl.gravity = Gravity.BOTTOM;
-            card.addView(title, tl);
-            if (p.progress > 0) {
-                View bar = bar(p.progress, 0x55FFFFFF, Color.WHITE, 4);
-                FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(4));
-                bl.gravity = Gravity.BOTTOM;
-                card.addView(bar, bl);
-            }
-            if (i > 0) row.addView(gap(14, false));
-            row.addView(card, weight(1, false));
-        }
-        if (n == 0) row.addView(text("Programmes you start in your apps show up here", 22, look.text2, sans, 400));
-        c.addView(row, weight(1, true));
-        return c;
-    }
-
-    private static BitmapFactory.Options sample(int s) {
-        BitmapFactory.Options o = new BitmapFactory.Options();
-        o.inSampleSize = s;
-        return o;
-    }
-
-    private void openPick(Trending.Pick p) {
-        if (p.intentUri != null) {
-            try { start(Intent.parseUri(p.intentUri, Intent.URI_INTENT_SCHEME)); return; } catch (Exception ignored) { }
-        }
-        Intent i = null;
-        if (p.pkg != null && p.pkg.startsWith(PlayerActivity.KEY_PREFIX)) {
-            for (AppEntry a : apps()) if (a.pkg.equals(p.pkg)) { i = a.launchIntent(); break; }
-        } else if (p.pkg != null) {
-            i = pm.getLeanbackLaunchIntentForPackage(p.pkg);
-        }
-        if (i != null) start(i);
     }
 
     // ---------------------------------------------------------------- settings

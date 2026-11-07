@@ -106,17 +106,31 @@ final class Football {
         ctx = c.getApplicationContext();
         dir = new File(c.getExternalFilesDir(null), "football");
         prefs = c.getSharedPreferences("football", Context.MODE_PRIVATE);
+        // Fixtures saved before every competition was fetched: ask again straight away.
+        if (!prefs.getBoolean("team_all", false)) {
+            prefs.edit().remove("team_ok_at").remove("team_try_at").putBoolean("team_all", true).apply();
+        }
     }
 
     // ---------------------------------------------------------------- leagues
 
+    /** Competitions Arsenal play in that aren't in the leagues menu: ESPN id, name, short name. */
+    private static final String[][] CUPS = {
+            {"eng.league_cup", "Carabao Cup", "EFL Cup"}, {"eng.charity", "Community Shield", "Shield"},
+            {"uefa.europa.conf", "Conference League", "UECL"}, {"uefa.super_cup", "Super Cup", "Super Cup"},
+            {"club.friendly", "Friendly", "Friendly"}, {"fifa.cwc", "Club World Cup", "CWC"}};
+
     static String leagueName(String id) {
         for (String[] l : LEAGUES) if (l[0].equals(id)) return l[1];
+        for (String[] l : CUPS) if (l[0].equals(id)) return l[1];
+        if (id.startsWith("friendly.")) return "Friendly";
         return id;
     }
 
     static String leagueShort(String id) {
         for (String[] l : LEAGUES) if (l[0].equals(id)) return l[2];
+        for (String[] l : CUPS) if (l[0].equals(id)) return l[2];
+        if (id.startsWith("friendly.")) return "Friendly";
         return id;
     }
 
@@ -164,6 +178,26 @@ final class Football {
         }
     }
 
+    /**
+     * Arsenal's coming matches in every competition (league, cups, Europe), soonest first, from the saved fixture
+     * list. Blocking (reads a small file).
+     */
+    List<Cricket.Match> teamUpcoming() {
+        List<Cricket.Match> out = new ArrayList<>();
+        try (InputStream in = new FileInputStream(new File(dir, "team_list.json"))) {
+            JSONArray a = new JSONArray(new String(readAll(in), StandardCharsets.UTF_8));
+            long now = System.currentTimeMillis();
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject o = a.getJSONObject(i);
+                if (o.optLong("at") < now - 3 * 3600_000L) continue;
+                out.add(fromJson(o));
+            }
+        } catch (Exception ignored) {
+            // Not fetched yet.
+        }
+        return out;
+    }
+
     /** Asks ESPN for Arsenal's fixtures every 3 hours (every 5 minutes after a failure), while Home shows. */
     void refreshTeamIfStale(Runnable done) {
         long now = System.currentTimeMillis();
@@ -172,14 +206,22 @@ final class Football {
         prefs.edit().putLong("team_try_at", now).apply();
         worker.execute(() -> {
             try {
-                JSONArray events = get(API + "eng.1/teams/" + TEAM_ID + "/schedule?fixture=true").optJSONArray("events");
+                // "all": every competition (ESPN's eng.1 list is the Premier League only).
+                JSONArray events = get(API + "all/teams/" + TEAM_ID + "/schedule?fixture=true").optJSONArray("events");
                 JSONObject next = null;
-                for (int i = 0; events != null && i < events.length() && next == null; i++) {
+                JSONArray list = new JSONArray();
+                for (int i = 0; events != null && i < events.length(); i++) {
                     JSONObject e = events.getJSONObject(i);
                     JSONObject lg = e.optJSONObject("league");
                     String league = lg == null ? "eng.1" : lg.optString("slug", "eng.1");
                     JSONObject m = parse(e, league, "");
-                    if (m != null && !m.optBoolean("ended") && m.optLong("at") > now - 3 * 3600_000L) next = m;
+                    if (m == null || m.optBoolean("ended") || m.optLong("at") <= now - 3 * 3600_000L) continue;
+                    if (next == null) next = m;
+                    if (list.length() < 8) list.put(m);
+                }
+                if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot create " + dir);
+                try (OutputStream out = new FileOutputStream(new File(dir, "team_list.json"))) {
+                    out.write(list.toString().getBytes(StandardCharsets.UTF_8));
                 }
                 if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot create " + dir);
                 File f = new File(dir, "team.json");
@@ -389,13 +431,19 @@ final class Football {
         o.put("full2", away.getJSONObject("team").optString("displayName"));
         o.put("img1", logo(home.getJSONObject("team")));
         o.put("img2", logo(away.getJSONObject("team")));
-        o.put("s1", "pre".equals(state) ? "" : home.optString("score"));
-        o.put("s2", "pre".equals(state) ? "" : away.optString("score"));
+        o.put("s1", "pre".equals(state) ? "" : score(home));
+        o.put("s2", "pre".equals(state) ? "" : score(away));
         return o;
     }
 
+    /** A team's goals: a plain string on the scoreboard, an object ({displayValue}) in a team's fixture list. */
+    static String score(JSONObject team) {
+        JSONObject o = team.optJSONObject("score");
+        return o != null ? o.optString("displayValue") : team.optString("score");
+    }
+
     /** A team's crest: the scoreboard gives "logo", a team's fixture list a "logos" array instead. */
-    private static String logo(JSONObject team) {
+    static String logo(JSONObject team) {
         String s = team.optString("logo");
         if (!s.isEmpty()) return s;
         JSONArray a = team.optJSONArray("logos");
@@ -412,6 +460,7 @@ final class Football {
         m.ended = o.optBoolean("ended");
         m.kind = leagueName(o.optString("league"));
         m.league = leagueShort(o.optString("league"));
+        m.slug = o.optString("league");
         m.t1 = o.optString("t1");
         m.t2 = o.optString("t2");
         m.short1 = o.optString("a1");
@@ -436,7 +485,7 @@ final class Football {
         return m;
     }
 
-    private static Date parseUtc(String s) {
+    static Date parseUtc(String s) {
         for (String p : new String[]{"yyyy-MM-dd'T'HH:mm'Z'", "yyyy-MM-dd'T'HH:mm:ss'Z'"}) {
             try {
                 SimpleDateFormat f = new SimpleDateFormat(p, Locale.US);
@@ -449,7 +498,7 @@ final class Football {
         return null;
     }
 
-    private static JSONObject get(String url) throws Exception {
+    static JSONObject get(String url) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(15_000);
         c.setReadTimeout(20_000);

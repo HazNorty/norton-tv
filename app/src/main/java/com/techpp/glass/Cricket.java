@@ -105,6 +105,7 @@ final class Cricket {
         String search;                            // no match card found: typed into the app's search ("India vs New Zealand")
         int rank;                                 // lower shows first
         boolean football;                         // a Football match (same card): kind is the league, status the clock
+        String slug;                              // football: ESPN's competition id ("eng.1", "uefa.champions")
         String short1, short2;                    // football: three-letter names for the score line ("ARS")
         String league;                            // football: the league's short name for the score line ("EPL")
         boolean ours;                             // Norton TV: Arsenal are playing (Football.TEAM)

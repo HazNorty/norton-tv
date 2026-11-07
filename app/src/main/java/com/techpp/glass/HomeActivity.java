@@ -290,26 +290,23 @@ public class HomeActivity extends Activity {
     /** Colours for the light (day) and dark (night) looks. */
     private static final class Theme {
         int bgTop, bgBottom, text, text2, iconBg, iconStroke, iconFocusBg, iconFocusFg, band, bandStroke,
-                scrimTop, scrimMid, scrimBottom, menuBg, menuStroke, menuFocusBg, menuFocusText, tileBg;
+                scrimTop, scrimMid, scrimBottom, menuBg, menuStroke, menuFocusBg, menuFocusText, tileBg, focus, edge;
         float ambientAlpha;
 
+        /**
+         * Norton TV: the same colours as Control Room (DashboardActivity.Look), so All apps reads as its second page:
+         * the Linen ground, translucent tiles with a hairline edge, outlined round chips, and the focus colour.
+         */
         static Theme of(boolean day) {
+            DashboardActivity.Look l = DashboardActivity.Look.of(day);
             Theme t = new Theme();
-            if (day) {
-                t.bgTop = 0xFFF5F6F8; t.bgBottom = 0xFFE2E5EA; t.text = 0xFF1D1D1F; t.text2 = 0xFF55555A;
-                t.iconBg = 0xC0FFFFFF; t.iconStroke = 0x10000000; t.iconFocusBg = 0xFF1D1D1F; t.iconFocusFg = 0xFFFFFFFF;
-                t.band = 0x94FFFFFF; t.bandStroke = 0xF2FFFFFF;
-                t.scrimTop = 0x8CF5F6F8; t.scrimMid = 0x33EBEEF2; t.scrimBottom = 0xA6E2E5EA;
-                t.menuBg = 0xFFFFFFFF; t.menuStroke = 0x14000000; t.menuFocusBg = 0xFF1D1D1F; t.menuFocusText = 0xFFFFFFFF;
-                t.tileBg = 0xFFD9DCE1; t.ambientAlpha = 0.22f;
-            } else {
-                t.bgTop = 0xFF121419; t.bgBottom = 0xFF08090C; t.text = 0xFFF5F5F7; t.text2 = 0xFFA1A1A6;
-                t.iconBg = 0x1AFFFFFF; t.iconStroke = 0x1FFFFFFF; t.iconFocusBg = 0xFFF5F5F7; t.iconFocusFg = 0xFF111113;
-                t.band = 0x12FFFFFF; t.bandStroke = 0x1FFFFFFF;
-                t.scrimTop = 0x5908090C; t.scrimMid = 0x2608090C; t.scrimBottom = 0xB308090C;
-                t.menuBg = 0xFF1C1C1F; t.menuStroke = 0x2EFFFFFF; t.menuFocusBg = 0xFFF5F5F7; t.menuFocusText = 0xFF111113;
-                t.tileBg = 0xFF232326; t.ambientAlpha = 0.30f;
-            }
+            t.bgTop = l.ground; t.bgBottom = l.ground; t.text = l.text; t.text2 = l.text2;
+            t.iconBg = 0x00000000; t.iconStroke = l.chipEdge; t.iconFocusBg = l.focus; t.iconFocusFg = l.ground;
+            t.band = l.tile; t.bandStroke = l.edge;
+            t.scrimTop = 0; t.scrimMid = 0; t.scrimBottom = 0;
+            t.menuBg = day ? 0xFFFFFFFF : 0xFF151C25; t.menuStroke = l.edge; t.menuFocusBg = l.focus; t.menuFocusText = l.ground;
+            t.tileBg = l.neutralTile; t.ambientAlpha = 0f;
+            t.focus = l.focus; t.edge = l.edge;
             return t;
         }
     }
@@ -317,22 +314,28 @@ public class HomeActivity extends Activity {
     private void applyTheme() {
         theme = Theme.of(day);
         backdrop.setTheme(day, theme.bgTop, theme.bgBottom, theme.scrimTop, theme.scrimMid, theme.scrimBottom, theme.ambientAlpha);
+        // Control Room's Linen ground (no picture or glow behind the page).
+        backdrop.setVisibility(View.GONE);
+        root.setBackground(new DashboardActivity.Ground(day, null, 0, getResources().getDisplayMetrics().widthPixels / 1920f));
+        getWindow().getDecorView().setBackgroundColor(theme.bgTop);
         title.setTextColor(theme.text);
         bigTime.setTextColor(theme.text);
         bigAmPm.setTextColor(theme.text);
         bigDate.setTextColor(theme.text);
         bigWeather.setTextColor(theme.text2);
         bigRule.setBackgroundColor((theme.text2 & 0x00FFFFFF) | 0x66000000);
-        allAppsLabel.setTextColor(theme.text);
+        allAppsLabel.setTextColor(theme.text2);
         credit.setTextColor((theme.text2 & 0x00FFFFFF) | 0x99000000);
         GradientDrawable band = new GradientDrawable();
-        band.setCornerRadius(px(30));
+        band.setCornerRadius(px(11));
         band.setColor(theme.band);
         band.setStroke(px(1), theme.bandStroke);
         dockBand.setBackground(band);
         moveHint.setTextColor(theme.text);
         moveHint.setBackground(rounded(theme.menuBg, theme.menuStroke, 14));
         ring.setDay(day);
+        ring.setColour(theme.focus);
+        styleTooltip();
         for (int i = 0; i < picksRow.getChildCount(); i++) stylePickText(picksRow.getChildAt(i));
         styleChannels();
         // Card backgrounds and match cards are drawn in the theme's colours: redraw the rows.
@@ -340,8 +343,12 @@ public class HomeActivity extends Activity {
             chanSignature = "";
             showChannels(appChannels);
         }
-        for (View t : dockTiles) t.setBackground(rounded(theme.tileBg, 0, 11));
-        for (View t : gridTiles) t.setBackground(rounded(theme.tileBg, 0, 11));
+        // App tiles are drawn in the theme's colours (the neutral ones): rebuild them.
+        if (!dockTiles.isEmpty() || !gridTiles.isEmpty()) {
+            buildAppViews();
+            if (zone == Z_DOCK) root.post(() -> focusDock(dockIdx));
+            else if (zone == Z_GRID) root.post(() -> focusGrid(gridIdx));
+        }
         styleTop();
         updateInfo();
     }
@@ -352,6 +359,56 @@ public class HomeActivity extends Activity {
         g.setColor(fill);
         if (stroke != 0) g.setStroke(px(1), stroke);
         return g;
+    }
+
+    /** What each round button at the top does, shown under it while it has focus. */
+    private static final String[] TOOLTIPS = {
+            "Control Center: network, Bluetooth, sound",
+            "Inputs: HDMI and TV sources",
+            "Wi-Fi settings",
+            "TV settings (hold OK for Norton TV settings)",
+            "VPN: open NordVPN"};
+    private TextView tooltip;
+
+    private void styleTooltip() {
+        if (tooltip == null) {
+            tooltip = new TextView(this);
+            tooltip.setTypeface(getResources().getFont(R.font.geist));
+            tooltip.setFontVariationSettings("'wght' 500");
+            tooltip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11);
+            tooltip.setSingleLine(true);
+            tooltip.setGravity(android.view.Gravity.CENTER);
+            tooltip.setPadding(px(11), 0, px(11), 0);
+            tooltip.setVisibility(View.GONE);
+            tooltip.setElevation(px(6));
+            ((FrameLayout) root).addView(tooltip, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, px(24)));
+        }
+        tooltip.setTextColor(theme.text);
+        tooltip.setBackground(rounded(theme.menuBg, theme.iconStroke, 12));
+    }
+
+    /** Shows the pop-up title under top button i (or hides it, for -1), kept on screen at the right edge. */
+    private void showTooltip(int i) {
+        if (tooltip == null) return;
+        if (i < 0 || i >= icons.length) { tooltip.setVisibility(View.GONE); return; }
+        tooltip.setText(TOOLTIPS[i]);
+        tooltip.setVisibility(View.VISIBLE);
+        ImageView icon = icons[i];
+        tooltip.post(() -> {
+            int[] a = new int[2], b = new int[2];
+            icon.getLocationInWindow(a);
+            root.getLocationInWindow(b);
+            // Measured for the new text now (its last layout was for the old one), so it always fits on screen.
+            tooltip.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    View.MeasureSpec.makeMeasureSpec(px(24), View.MeasureSpec.EXACTLY));
+            int w = tooltip.getMeasuredWidth(), screen = root.getWidth();
+            int x = a[0] - b[0] + icon.getWidth() / 2 - w / 2;
+            x = Math.max(px(12), Math.min(x, screen - w - px(12)));
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) tooltip.getLayoutParams();
+            lp.leftMargin = x;
+            lp.topMargin = a[1] - b[1] + icon.getHeight() + px(8);
+            tooltip.setLayoutParams(lp);
+        });
     }
 
     /** Icon buttons and tabs: their look depends on the theme and on whether they have focus. */
@@ -368,6 +425,7 @@ public class HomeActivity extends Activity {
             icons[i].setImageTintList(ColorStateList.valueOf(fg));
             icons[i].animate().scaleX(f ? 1.08f : 1f).scaleY(f ? 1.08f : 1f).setDuration(150).start();
         }
+        showTooltip(zone == Z_TOP ? iconIdx : -1);
         for (int i = 0; i < tabs.length; i++) {
             boolean selected = i == tabIdx, f = zone == Z_TABS && selected;
             tabs[i].setVisibility(picksFor(i).isEmpty() ? View.GONE : View.VISIBLE);
@@ -385,18 +443,23 @@ public class HomeActivity extends Activity {
     private void applyForYou() {
         forYouHead.setVisibility(forYou ? View.VISIBLE : View.GONE);
         info.setVisibility(View.GONE);
-        float k = forYou ? 1f : 1.6f;
-        bigWeather.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12 * k);
-        bigTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 42 * k);
-        bigAmPm.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15 * k);
-        bigDate.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14 * k);
-        ViewGroup.MarginLayoutParams am = (ViewGroup.MarginLayoutParams) bigAmPm.getLayoutParams();
-        am.bottomMargin = px(5 * k);
+        // Norton TV: the time and date exactly as on Control Room (its 56 and 42 px on the 1920 grid are 28 and
+        // 21 here), no weather line (Control Room has a weather tile) and no rule between them.
+        bigWeather.setVisibility(View.GONE);
+        bigTime.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 28);
+        bigTime.setFontVariationSettings("'wght' 300");
+        bigAmPm.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12);
+        bigDate.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 21);
+        bigDate.setAllCaps(false);
+        bigDate.setLetterSpacing(0f);
+        bigDate.setFontVariationSettings("'wght' 500");
+        bigRule.setVisibility(View.INVISIBLE);
         ViewGroup.MarginLayoutParams rule = (ViewGroup.MarginLayoutParams) bigRule.getLayoutParams();
-        rule.height = px(28 * k);
-        rule.setMarginStart(px(16 * k));
-        rule.setMarginEnd(px(16 * k));
-        ((ViewGroup.MarginLayoutParams) bigClock.getLayoutParams()).topMargin = px(forYou ? 26 : 34);
+        rule.width = 0;
+        rule.setMarginStart(px(13));
+        rule.setMarginEnd(0);
+        ((ViewGroup.MarginLayoutParams) bigClock.getLayoutParams()).topMargin = px(17);
+        placeDock();
         bigClock.requestLayout();
         styleTop();
     }
@@ -416,9 +479,9 @@ public class HomeActivity extends Activity {
         bigTime.setText(DateFormat.format(h24 ? "HH:mm" : "h:mm", now));
         bigAmPm.setText(h24 ? "" : DateFormat.format("a", now));
         bigAmPm.setVisibility(h24 ? View.GONE : View.VISIBLE);
-        bigDate.setText(DateFormat.format("EEEE  d MMMM", now));
+        bigDate.setText(DateFormat.format("EEEE d MMMM", now));
         bigWeather.setText(weatherLine == null ? "" : weatherLine);
-        bigWeather.setVisibility(weatherLine == null ? View.GONE : View.VISIBLE);
+        bigWeather.setVisibility(View.GONE);
         updateScore();
     }
 
@@ -647,27 +710,61 @@ public class HomeActivity extends Activity {
         else if (zone == Z_GRID) focusGrid(Math.min(gridIdx, gridTiles.size() - 1));
     }
 
-    /** One app tile: its banner (or icon) on a rounded card. */
+    /**
+     * One app tile, as on Control Room: the app's own colour (the players' set colours, else its banner's, deepened
+     * so white text reads on it), its icon top left in a rounded square, and its name at the bottom.
+     */
     private View appTile(AppEntry app, int wDp, int hDp) {
-        FrameLayout card = new FrameLayout(this);
-        card.setBackground(rounded(theme.tileBg, 0, 11));
-        final float r = px(11);
-        card.setOutlineProvider(new ViewOutlineProvider() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(px(10), px(9), px(10), px(9));
+        int colour = DashboardActivity.tileColour(app, pm);
+        boolean neutral = colour == 0;
+        int fill = neutral ? theme.tileBg : colour, fg = neutral ? theme.text : 0xFFFFFFFF;
+        card.setBackground(rounded(fill, neutral ? theme.edge : fill, 9));
+        ImageView img = new ImageView(this);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        final float r = px(6);
+        img.setOutlineProvider(new ViewOutlineProvider() {
             @Override public void getOutline(View v, Outline o) { o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), r); }
         });
-        card.setClipToOutline(true);
-        Drawable banner = app.banner(pm);
-        ImageView img = new ImageView(this);
-        if (banner != null) {
-            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            img.setImageDrawable(banner);
-            card.addView(img, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        img.setClipToOutline(true);
+        String[] logos = app.isPlayer() ? DashboardActivity.playerLogo(app.pkg) : null;
+        if (logos != null) {
+            // The players' logos, as Control Room downloads them (kept on disk).
+            img.setVisibility(View.INVISIBLE);
+            File dir = new File(getCacheDir(), "logos");
+            background.execute(() -> {
+                Bitmap got = null;
+                for (String url : logos) {
+                    File f = WatchNext.cached(this, dir, url, 192);
+                    if (f != null && (got = BitmapFactory.decodeFile(f.getPath())) != null) break;
+                }
+                Bitmap b = got;
+                if (b != null) runOnUiThread(() -> { img.setImageBitmap(b); img.setVisibility(View.VISIBLE); });
+            });
         } else {
-            img.setImageDrawable(app.icon(pm));
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(px(hDp * 0.6f), px(hDp * 0.6f));
-            lp.gravity = android.view.Gravity.CENTER;
-            card.addView(img, lp);
+            android.graphics.drawable.Drawable icon = app.icon(pm);
+            if (icon == null) try { icon = pm.getApplicationIcon(app.pkg); } catch (PackageManager.NameNotFoundException ignored) { }
+            img.setImageDrawable(icon);
         }
+        card.addView(img, new LinearLayout.LayoutParams(px(26), px(26)));
+        View gap = new View(this);
+        card.addView(gap, new LinearLayout.LayoutParams(1, 0, 1f));
+        String label = DashboardActivity.shortName(app);
+        TextView name = new TextView(this);
+        name.setText(label);
+        name.setTextColor(fg);
+        name.setTypeface(getResources().getFont(R.font.geist));
+        name.setFontVariationSettings("'wght' 600");
+        name.setIncludeFontPadding(false);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        // Long names go smaller over two lines rather than being cut off, as on Control Room.
+        // Long names shrink to fit on one line rather than being cut off.
+        name.setMaxLines(1);
+        name.setTextSize(13);
+        name.setAutoSizeTextTypeUniformWithConfiguration(9, 13, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
+        card.addView(name, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(17)));
         card.setContentDescription(app.label);
         card.setLayoutParams(new LinearLayout.LayoutParams(px(wDp), px(hDp)));
         return card;
@@ -710,7 +807,23 @@ public class HomeActivity extends Activity {
     }
 
     /** Where All apps starts. Norton TV: straight under the dock, above the channel rows. */
-    private int gridTopDp() { return CHAN_TOP + 18 + 40; }
+    private int gridTopDp() { return dockTopDp() + 104 + 30 + 18 + 40; }
+
+    /**
+     * Where the dock sits. With For You shown it's under the picks, as in Talkies; without (Norton TV's way) it moves
+     * up under the time and the football line, so All apps is a full page of tiles like Control Room.
+     */
+    private int dockTopDp() { return forYou && !rowPicks.isEmpty() ? 414 : 116; }
+
+    /** Puts the dock where dockTopDp says (picks shown or not), and everything below it after. */
+    private void placeDock() {
+        ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) dockBand.getLayoutParams();
+        if (lp.topMargin == px(dockTopDp())) return;
+        lp.topMargin = px(dockTopDp());
+        dockBand.requestLayout();
+        layoutPage();
+        if (zone == Z_DOCK) root.post(this::snapRing);
+    }
 
     /** Where the channel rows (calendar, lights, football, app channels) start: after All apps. */
     private int chanTopDp() {
@@ -878,9 +991,12 @@ public class HomeActivity extends Activity {
             TextView title = new TextView(this);
             title.setTag("chanTitle");
             title.setText(ch.title);
-            title.setTextSize(16);
+            // Control Room's section label: small, upper case, spaced ("LIGHTS", "CALENDAR").
+            title.setTextSize(10);
+            title.setAllCaps(true);
+            title.setLetterSpacing(0.06f);
             title.setTypeface(getResources().getFont(R.font.geist));
-            title.setFontVariationSettings("'wght' 550");
+            title.setFontVariationSettings("'wght' 500");
             header.addView(title);
             row.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(28)));
 
@@ -1085,7 +1201,7 @@ public class HomeActivity extends Activity {
     /** A calendar card: the calendar's colour down the left, the time, the title, and whose calendar. */
     private View calendarCard(Trending.Pick p) {
         FrameLayout card = new FrameLayout(this);
-        card.setBackground(rounded(theme.tileBg, 0, 10));
+        card.setBackground(rounded(theme.tileBg, theme.edge, 10));
         final float r = px(10);
         card.setOutlineProvider(new ViewOutlineProvider() {
             @Override public void getOutline(View v, Outline o) { o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), r); }
@@ -1136,7 +1252,7 @@ public class HomeActivity extends Activity {
         if ("today".equals(p.kind)) return calendarCard(p);
         if ("light".equals(p.kind)) return lightCard(p);
         FrameLayout card = new FrameLayout(this);
-        card.setBackground(rounded(theme.tileBg, 0, 10));
+        card.setBackground(rounded(theme.tileBg, theme.edge, 10));
         final float r = px(10);
         card.setOutlineProvider(new ViewOutlineProvider() {
             @Override public void getOutline(View v, Outline o) { o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), r); }
@@ -1243,7 +1359,7 @@ public class HomeActivity extends Activity {
         for (int i = 0; i < channelsBox.getChildCount(); i++) {
             View row = channelsBox.getChildAt(i);
             TextView t = row.findViewWithTag("chanTitle"), n = row.findViewWithTag("name"), m = row.findViewWithTag("meta");
-            if (t != null) t.setTextColor(theme.text);
+            if (t != null) t.setTextColor(theme.text2);
             if (n != null) n.setTextColor(theme.text);
             if (m != null) m.setTextColor(theme.text2);
         }
@@ -1318,6 +1434,7 @@ public class HomeActivity extends Activity {
             picksRow.setVisibility(View.GONE);
             styleTop();
             updateAmbient();
+            placeDock();
             return;
         }
         if (picksFor(tabIdx).isEmpty()) {
@@ -1334,6 +1451,7 @@ public class HomeActivity extends Activity {
         picksRow.setVisibility(rowPicks.isEmpty() ? View.INVISIBLE : View.VISIBLE);
         styleTop();
         updateAmbient();
+        placeDock();
     }
 
     /** A pick: the image card (with a progress bar when the app shares one), its title, and a description line. */
@@ -1342,7 +1460,7 @@ public class HomeActivity extends Activity {
         item.setOrientation(LinearLayout.VERTICAL);
         item.setClipChildren(false);
         FrameLayout card = new FrameLayout(this);
-        card.setBackground(rounded(theme.tileBg, 0, 14));
+        card.setBackground(rounded(theme.tileBg, theme.edge, 14));
         final float r = px(14);
         card.setOutlineProvider(new ViewOutlineProvider() {
             @Override public void getOutline(View v, Outline o) { o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), r); }
@@ -1671,7 +1789,7 @@ public class HomeActivity extends Activity {
         dockIdx = Math.max(0, Math.min(i, dockTiles.size() - 1));
         prefs.edit().putInt("last_dock_col", dockIdx).apply();
         scrollPage(0);
-        setFocus(dockTiles.get(dockIdx), moving ? 1.22f : 1.14f, 11);
+        setFocus(dockTiles.get(dockIdx), moving ? 1.14f : 1.06f, 9);
         updateAmbient();
         styleTop();
         followRing(260);
@@ -1685,7 +1803,7 @@ public class HomeActivity extends Activity {
         int gridTop = gridTopDp();
         float rowTop = gridTop + row * (GRID_TILE_H + GRID_GAP_Y);
         scrollPage(px(Math.max(0, rowTop - 330)));  // Norton TV: the dock stays in view above the first rows
-        setFocus(gridTiles.get(gridIdx), moving ? 1.18f : 1.10f, 11);
+        setFocus(gridTiles.get(gridIdx), moving ? 1.14f : 1.06f, 9);
         updateAmbient();
         styleTop();
         followRing(420);
@@ -2011,6 +2129,7 @@ public class HomeActivity extends Activity {
     // ---------------------------------------------------------------- menus (Inputs, Control Center)
 
     private void beginMenu(int anchor, String heading) {
+        if (tooltip != null) tooltip.setVisibility(View.GONE);
         menuAnchor = anchor;
         menuTile = null;
         menuClosed = null;

@@ -1,10 +1,11 @@
 <resources>
     <!-- Round icon buttons, top right. Colours and the focused look are set in code per day/night theme. -->
     <style name="IconButton">
-        <item name="android:layout_width">38dp</item>
-        <item name="android:layout_height">38dp</item>
-        <item name="android:scaleType">center</item>
-        <item name="android:layout_marginStart">10dp</item>
+        <item name="android:layout_width">28dp</item>
+        <item name="android:layout_height">28dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:padding">7dp</item>
+        <item name="android:layout_marginStart">7dp</item>
     </style>
     <style name="TabText">
         <item name="android:layout_width">wrap_content</item>
