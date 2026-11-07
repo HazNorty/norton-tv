@@ -62,7 +62,9 @@ import java.util.concurrent.Executors;
  */
 public final class DashboardActivity extends Activity {
     private static final String TAG = "GlassDash";
-    private static final String TVX = "com.sony.dtv.tvx", VPN_APP = "com.nordvpn.android";
+    /** YouTube Kids' app icon, from its Play Store listing (until the app is installed and has its own). */
+    private static final String KIDS_LOGO = "https://play-lh.googleusercontent.com/XmNSJLiwxfeoGwofbTZ37le-jDNAdZmHbVo7un7y2g-d-A3iD0LKUm1FMAgdURw8PFEiFh4Vv14u7q_nvET-=s192";
+    private static final String TVX = "com.sony.dtv.tvx", VPN_APP = "com.nordvpn.android", KIDS = "com.google.android.youtube.tvkids";
     private static final int RED = 0xFFE20520;
 
     /** The two looks. Brand colours (apps, Arsenal, calendars) are the same in both. */
@@ -369,8 +371,17 @@ public final class DashboardActivity extends Activity {
         page.addView(appsRow(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(150)));
         page.addView(gap(20, true));
 
-        // The Lights, across the full width (Continue watching and Trending are gone).
-        page.addView(lightsTile(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(200)));
+        // "Inputs Card" (chosen from five on the design canvas): the Lights, and beside them one card with what's
+        // plugged into HDMI 1 and 2.
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.addView(lightsTile(), weight(3, false));
+        List<Tile> inputs = inputTiles();
+        if (!inputs.isEmpty()) {
+            bottom.addView(gap(20, false));
+            bottom.addView(inputsCard(inputs), weight(1.4f, false));
+        }
+        page.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(200)));
 
         placeLivePicture();
 
@@ -391,6 +402,13 @@ public final class DashboardActivity extends Activity {
         // The date as strong as the time beside it (the weather has its own tile, so no chip for it up here).
         h.addView(text(String.valueOf(DateFormat.format("EEEE d MMMM", t)), 42, look.text, sans, 500));
         h.addView(spacer());
+        // Photos: starts Google's Ambient Mode slideshow now (its album is chosen in the Google Home app).
+        TextView photos = chip("Photos", look.text2, look.chipEdge, R.drawable.ic_photos);
+        photos.setTag("photos");
+        photos.setContentDescription("Photos slideshow");
+        pressable(photos, Color.TRANSPARENT, look.chipEdge, 999, 1.04f, this::startSlideshow);
+        h.addView(photos);
+        h.addView(gap(14, false));
         boolean vpnInstalled = pm.getLeanbackLaunchIntentForPackage(VPN_APP) != null;
         if (vpnOn || vpnInstalled) {
             TextView vpn = chip(vpnOn ? "VPN · On" : "VPN · Off", vpnOn ? look.green : look.text3, vpnOn ? look.greenEdge : look.chipEdge, R.drawable.ic_vpn);
@@ -412,6 +430,17 @@ public final class DashboardActivity extends Activity {
         pressable(gear, Color.TRANSPARENT, look.chipEdge, 999, 1.08f, this::openSettings);
         h.addView(gear, new LinearLayout.LayoutParams(px(56), px(56)));
         return h;
+    }
+
+    /**
+     * Starts the screensaver now: Google's Ambient Mode on this TV, showing the Google Photos album picked for it in
+     * the Google Home app (Google no longer lets other apps read your albums). Through the system's "start now"
+     * screen, the one Settings → Screen saver uses.
+     */
+    private void startSlideshow() {
+        Intent dream = new Intent(Intent.ACTION_MAIN).setClassName("com.android.systemui", "com.android.systemui.Somnambulator");
+        if (pm.resolveActivity(dream, 0) != null) { start(dream); return; }
+        start(new Intent(Settings.ACTION_DREAM_SETTINGS));
     }
 
     /** "10° clear" → "10° Clear". */
@@ -1055,8 +1084,48 @@ public final class DashboardActivity extends Activity {
                 break;
             }
         }
-        // HDMI 1 and HDMI 2, connected or not (the others are under All apps → Inputs), named after what's plugged
-        // in when the TV knows it over HDMI-CEC: such devices are inputs of their own, under their port.
+        // YouTube Kids: the app when it's installed, else its Play Store page to install it.
+        boolean hasKids = false;
+        for (Tile t : out) if (t.key.equals(KIDS)) hasKids = true;
+        if (!hasKids) {
+            Tile k = new Tile();
+            k.key = KIDS;
+            k.name = "YT Kids";
+            k.kind = "KIDS";
+            k.colour = 0xFFC2410C;
+            Intent launch = pm.getLeanbackLaunchIntentForPackage(KIDS);
+            if (launch != null) try { k.icon = pm.getApplicationIcon(KIDS); } catch (PackageManager.NameNotFoundException ignored) { }
+            else k.logos = siteLogo(KIDS_LOGO, "kids.youtube.com");
+            k.open = () -> {
+                Intent i = pm.getLeanbackLaunchIntentForPackage(KIDS);
+                start(i != null ? i : new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + KIDS)));
+            };
+            out.add(k);
+        }
+        Tile apps = new Tile();
+        apps.key = "all"; apps.name = "All apps"; apps.kind = "···"; apps.colour = 0;
+        apps.open = () -> start(new Intent(this, HomeActivity.class));
+        out.add(apps);
+        return out;
+    }
+
+    /**
+     * HDMI 1 and HDMI 2, connected or not (the others are under All apps → Inputs), named after what's plugged in
+     * when the TV knows it over HDMI-CEC: such devices are inputs of their own, under their port.
+     */
+    private List<Tile> inputTiles() {
+        List<Tile> out = new ArrayList<>();
+        if (Demo.on(this)) {
+            // The emulator has no HDMI: placeholder devices, for design work.
+            String[][] fake = {{"PlayStation 5", "HDMI 1"}, {"Fire TV Stick", "HDMI 2"}};
+            for (String[] f : fake) {
+                Tile t = new Tile();
+                t.key = "hdmi:" + f[1]; t.name = f[0]; t.kind = f[1]; t.logos = deviceLogo(f[0]); t.colour = 0;
+                t.open = () -> { };
+                out.add(t);
+            }
+            return out;
+        }
         TvInputManager tim = getSystemService(TvInputManager.class);
         if (tim != null) {
             try {
@@ -1091,11 +1160,34 @@ public final class DashboardActivity extends Activity {
                 Log.i(TAG, "No inputs: " + e);
             }
         }
-        Tile apps = new Tile();
-        apps.key = "all"; apps.name = "All apps"; apps.kind = "···"; apps.colour = 0;
-        apps.open = () -> start(new Intent(this, HomeActivity.class));
-        out.add(apps);
         return out;
+    }
+
+    /** The Inputs card: one line per HDMI port, the device's logo, its name and the port. */
+    private View inputsCard(List<Tile> inputs) {
+        LinearLayout c = card(true, 24);
+        c.addView(label("Inputs", look.text2));
+        c.addView(gap(14, true));
+        for (int i = 0; i < inputs.size(); i++) {
+            Tile t = inputs.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(px(14), 0, px(16), 0);
+            row.setTag("app:" + t.key);
+            pressable(row, look.lightOffBg, look.lightOffEdge, 14, 1.04f, t.open);
+            if (t.icon != null || t.logos != null) {
+                View logo = logo(t);
+                logo.setLayoutParams(new LinearLayout.LayoutParams(px(36), px(36)));
+                row.addView(logo);
+                row.addView(gap(14, false));
+            }
+            row.addView(text(t.name, 22, look.text, sans, 600), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            row.addView(text(t.kind, 15, look.text3, mono, 500));
+            if (i > 0) c.addView(gap(12, true));
+            c.addView(row, weight(1, true));
+        }
+        return c;
     }
 
     /** The TV's apps, with the UK players (Norton TV's own tiles) in place of Norton TV itself. */
